@@ -32,6 +32,7 @@ COPY --from=builder /app/dist ./dist
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV FE_URL="*"
 
 # Create a non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -40,5 +41,5 @@ USER appuser
 # Expose the application port
 EXPOSE 8080
 
-# Start the application (corrected path)
-CMD ["node", "dist/main.js"]
+# Start the application with increased timeout
+CMD ["node", "--max-old-space-size=256", "dist/main.js"]
