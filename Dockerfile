@@ -1,25 +1,44 @@
-# Etapa 1: build
-FROM node:18-alpine AS builder
+# Build stage
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
-RUN npm install
 
+# Install dependencies
+RUN npm ci
+
+# Copy source code
 COPY . .
-RUN npm run build && echo "✅ Build done" && ls -la /app/dist
 
-# Etapa 2: producción
-FROM node:18-alpine
+# Build the application
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine
 
 WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
- COPY --from=builder /app/node_modules ./node_modules
- COPY package*.json ./
-RUN npm install --production
+# Copy package files
+COPY package*.json ./
 
+# Install production dependencies only
+RUN npm ci --only=production
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=8080
+
+# Create a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+# Expose the application port
 EXPOSE 8080
 
-# Asegúrate de usar .js si aplica
-CMD ["node", "dist/src/main"]
+# Start the application (corrected path)
+CMD ["node", "dist/main.js"]
