@@ -13,13 +13,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: configService.get('SUPABASE_JWT_SECRET'),
+      passReqToCallback: true, // This allows us to access the request object
     });
   }
 
-  async validate(payload: any) {
+  async validate(request: any) {
     try {
+      // Get the raw token from the Authorization header
+      const token = request.get('authorization').replace('Bearer ', '');
+
       // Verify the user token with Supabase
-      const user = await this.authService.validateUser(payload);
+      const user = await this.authService.validateUser(token);
 
       if (!user) {
         throw new Error('User not found');
