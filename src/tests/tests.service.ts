@@ -5,9 +5,14 @@ import {
   ProductWithProlificStatus,
   RawTestData,
   TestData,
-} from './interfaces/test-data.interface';
-import { TableName } from 'lib/enums';
+  CompetitiveInsights,
+} from './interfaces';
+import { Rpc, TableName } from 'lib/enums';
 import { GET_TEST_DATA_QUERY } from './constants';
+import {
+  TestDemographics,
+  TestSummary,
+} from 'lib/interfaces/entities.interface';
 
 @Injectable()
 export class TestsService {
@@ -27,6 +32,31 @@ export class TestsService {
     return this.transformTestData(unformattedTestData);
   }
 
+  public getTestDemographics(testId: string) {
+    return this.supabaseService.getByCondition<TestDemographics>({
+      tableName: TableName.TEST_DEMOGRAPHICS,
+      selectQuery: '*',
+      condition: 'test_id',
+      value: testId,
+    });
+  }
+
+  public getTestSummaries(testId: string) {
+    return this.supabaseService.getByCondition<TestSummary[]>({
+      tableName: TableName.TEST_SUMMARY,
+      selectQuery: '*',
+      condition: 'test_id',
+      value: testId,
+      single: false,
+    });
+  }
+
+  public getCompetitorInsights(testId: string): Promise<CompetitiveInsights> {
+    return this.supabaseService.rpc(Rpc.GET_COMPETITOR_INSIGHTS, {
+      p_test_id: testId,
+    });
+  }
+
   private transformTestData(data: RawTestData): TestData {
     const surveysByType = this.groupResponsesByType(
       data.responses_surveys || [],
@@ -38,6 +68,7 @@ export class TestsService {
     return {
       id: data.id,
       name: data.name,
+      objective: data.objective,
       status: data.status,
       searchTerm: data.search_term,
       competitors: data.competitors?.map((c) => c.product) || [],

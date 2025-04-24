@@ -4,6 +4,7 @@ export interface RawTestData {
   status: 'draft' | 'active' | 'complete';
   search_term: string;
   created_at: string;
+  objective: string;
   updated_at: string;
   competitors: Array<{
     product: {
@@ -85,6 +86,7 @@ export interface TestData {
   id: string;
   name: string;
   status: 'draft' | 'active' | 'complete';
+  objective: string;
   searchTerm: string;
   competitors: Array<Product>;
   variations: {
