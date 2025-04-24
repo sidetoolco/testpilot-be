@@ -5,6 +5,8 @@ import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { TestsModule } from './tests/tests.module';
 import { InsightsModule } from './insights/insights.module';
+import { ProlificModule } from './prolific/prolific.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { InsightsModule } from './insights/insights.module';
     SupabaseModule,
     TestsModule,
     InsightsModule,
+    ProlificModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [],

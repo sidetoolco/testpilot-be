@@ -12,6 +12,8 @@ import { GET_TEST_DATA_QUERY } from './constants';
 import {
   TestDemographics,
   TestSummary,
+  TestTime,
+  TestVariation,
 } from 'lib/interfaces/entities.interface';
 
 @Injectable()
@@ -54,6 +56,58 @@ export class TestsService {
   public getCompetitorInsights(testId: string): Promise<CompetitiveInsights> {
     return this.supabaseService.rpc(Rpc.GET_COMPETITOR_INSIGHTS, {
       p_test_id: testId,
+    });
+  }
+
+  public async updateTestVariationStatus(
+    status: string,
+    testId: string,
+    variation: string,
+  ) {
+    return await this.supabaseService.update<TestVariation>(
+      TableName.TEST_VARIATIONS,
+      {
+        prolific_status: status,
+      },
+      [
+        { key: 'test_id', value: testId },
+        { key: 'variation_type', value: variation },
+      ],
+    );
+  }
+
+  public getTestVariations(testId: string) {
+    return this.supabaseService.getByCondition<TestVariation[]>({
+      tableName: TableName.TEST_VARIATIONS,
+      selectQuery: "*, product:products(*)",
+      condition: 'test_id',
+      value: testId,
+      single: false,
+    });
+  }
+
+  public getTestTimesByProductId(productId: string) {
+    return this.supabaseService.getByCondition<TestTime[]>({
+      tableName: TableName.TEST_TIMES,
+      condition: 'product_id',
+      value: productId,
+      single: false,
+    });
+  }
+
+  public getTestTimesByTestVariation(testId: string, variationType: string) {
+    return this.supabaseService.getByCondition<TestTime[]>({
+      tableName: TableName.TEST_TIMES,
+      selectQuery: '*, testers_session!inner(*)',
+      condition: 'testers_session.test_id',
+      value: testId,
+      single: false,
+      additionalConditions: [
+        {
+          key: 'testers_session.variation_type' as any,
+          value: variationType,
+        },
+      ],
     });
   }
 
