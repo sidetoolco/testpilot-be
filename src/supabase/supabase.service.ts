@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { TableName } from 'lib/enums';
+import { Rpc, TableName } from 'lib/enums';
 
 @Injectable()
 export class SupabaseService {
@@ -22,6 +22,31 @@ export class SupabaseService {
     return user;
   }
 
+  public async getByCondition<T>({
+    tableName,
+    selectQuery = '*',
+    condition,
+    value,
+    single = true
+  }: {
+    tableName: TableName;
+    selectQuery?: string;
+    condition: string;
+    value: any;
+    single?: boolean;
+  }): Promise<T | null> {
+    let query = this.client
+      .from(tableName)
+      .select(selectQuery)
+      .eq(condition, value);
+
+    const { data, error } = await (single ? query.maybeSingle() : query);
+
+    if (error) throw error;
+
+    return data as T;
+  }
+
   public async getById<T>({
     tableName,
     selectQuery = '*',
@@ -31,14 +56,22 @@ export class SupabaseService {
     selectQuery?: string;
     id: string;
   }): Promise<T | null> {
-    const { data, error } = await this.client
-      .from(tableName)
-      .select(selectQuery)
-      .eq('id', id)
-      .maybeSingle();
+    const result = await this.getByCondition<T>({
+      tableName,
+      selectQuery,
+      condition: 'id',
+      value: id,
+      single: true
+    });
+    
+    return result as T | null;
+  }
+
+  public async rpc(functionName: Rpc, params?: Record<string, any>) {
+    const { data, error } = await this.client.rpc(functionName, params);
 
     if (error) throw error;
 
-    return data as T;
+    return data;
   }
 }

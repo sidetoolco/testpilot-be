@@ -1,1 +1,1 @@
-export * from './table-names.enum';
+export * from './supabase.enum';

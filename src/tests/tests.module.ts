@@ -7,5 +7,6 @@ import { TestsController } from './tests.controller';
   providers: [TestsService],
   imports: [SupabaseModule],
   controllers: [TestsController],
+  exports: [TestsService]
 })
 export class TestsModule {}
