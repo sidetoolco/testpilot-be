@@ -1,0 +1,94 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { SupabaseService } from 'supabase/supabase.service';
+import {
+  Product,
+  ProductWithProlificStatus,
+  RawTestData,
+  TestData,
+} from './interfaces/test-data.interface';
+import { TableName } from 'lib/enums';
+import { GET_TEST_DATA_QUERY } from './constants';
+
+@Injectable()
+export class TestsService {
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  public async getTestById(testId: string): Promise<TestData> {
+    const unformattedTestData = await this.supabaseService.getById<RawTestData>(
+      {
+        tableName: TableName.TESTS,
+        id: testId,
+        selectQuery: GET_TEST_DATA_QUERY,
+      },
+    );
+
+    if (!unformattedTestData) throw new NotFoundException('Test not found');
+
+    return this.transformTestData(unformattedTestData);
+  }
+
+  private transformTestData(data: RawTestData): TestData {
+    const surveysByType = this.groupResponsesByType(
+      data.responses_surveys || [],
+    );
+    const comparisonsByType = this.groupResponsesByType(
+      data.responses_comparisons || [],
+    );
+
+    return {
+      id: data.id,
+      name: data.name,
+      status: data.status,
+      searchTerm: data.search_term,
+      competitors: data.competitors?.map((c) => c.product) || [],
+      variations: {
+        a: this.getVariationWithProduct(data.variations, 'a'),
+        b: this.getVariationWithProduct(data.variations, 'b'),
+        c: this.getVariationWithProduct(data.variations, 'c'),
+      },
+      demographics: {
+        ageRanges: data.demographics?.[0]?.age_ranges || [],
+        gender: data.demographics?.[0]?.genders || [],
+        locations: data.demographics?.[0]?.locations || [],
+        interests: data.demographics?.[0]?.interests || [],
+        testerCount: data.demographics?.[0]?.tester_count || 0,
+      },
+      completed_sessions:
+        (data.responses_surveys?.length || 0) +
+        (data.responses_comparisons?.length || 0),
+      responses: {
+        surveys: surveysByType,
+        comparisons: comparisonsByType,
+      },
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
+
+  private groupResponsesByType(
+    responses: Array<{ tester_id: { variation_type: string } }>,
+  ) {
+    return responses.reduce((acc, item) => {
+      const type = item.tester_id.variation_type;
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+      acc[type].push(item);
+      return acc;
+    }, {});
+  }
+
+  private getVariationWithProduct(
+    variations: Array<{
+      product: Product;
+      variation_type: string;
+      prolific_status: string | null;
+    }>,
+    type: 'a' | 'b' | 'c',
+  ): ProductWithProlificStatus | null {
+    const variation = variations?.find((v) => v.variation_type === type);
+    return variation
+      ? { ...variation.product, prolificStatus: variation.prolific_status }
+      : null;
+  }
+}

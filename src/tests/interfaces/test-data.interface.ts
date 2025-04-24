@@ -1,0 +1,148 @@
+export interface RawTestData {
+  id: string;
+  name: string;
+  status: 'draft' | 'active' | 'complete';
+  search_term: string;
+  created_at: string;
+  updated_at: string;
+  competitors: Array<{
+    product: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+  }>;
+  variations: Array<{
+    product: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    variation_type: 'a' | 'b' | 'c';
+    prolific_status: string | null;
+  }>;
+  demographics: Array<{
+    age_ranges: string[];
+    genders: string[];
+    locations: string[];
+    interests: string[];
+    tester_count: number;
+  }>;
+  responses_surveys: Array<{
+    improve_suggestions: string;
+    likes_most: string;
+    products: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    tester_id: {
+      variation_type: string;
+      id: string;
+      prolific_pid: string;
+      shopper_demographic: {
+        id_prolific: string;
+        age: number;
+        sex: string;
+        country_residence: string;
+      };
+    };
+  }>;
+  responses_comparisons: Array<{
+    improve_suggestions: string;
+    likes_most: string;
+    choose_reason: string;
+    products: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    amazon_products: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    tester_id: {
+      variation_type: string;
+      id: string;
+      prolific_pid: string;
+      shopper_demographic: {
+        id_prolific: string;
+        age: number;
+        sex: string;
+        country_residence: string;
+      };
+    };
+  }>;
+}
+
+export interface TestData {
+  id: string;
+  name: string;
+  status: 'draft' | 'active' | 'complete';
+  searchTerm: string;
+  competitors: Array<Product>;
+  variations: {
+    a: ProductWithProlificStatus | null;
+    b: ProductWithProlificStatus | null;
+    c: ProductWithProlificStatus | null;
+  };
+  demographics: {
+    ageRanges: string[];
+    gender: string[];
+    locations: string[];
+    interests: string[];
+    testerCount: number;
+  };
+  completed_sessions: number;
+  responses: {
+    surveys: Record<string, Survey[]>;
+    comparisons: Record<string, Comparison[]>;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Product {
+  id: string;
+  title: string;
+  image_url: string;
+  price: number;
+}
+
+export interface ProductWithProlificStatus extends Product {
+  prolificStatus: string | null;
+}
+
+export interface Survey {
+  improve_suggestions: string;
+  likes_most: string;
+  products: Product;
+  tester_id: TesterInfo;
+}
+
+export interface Comparison {
+  improve_suggestions: string;
+  likes_most: string;
+  choose_reason: string;
+  products: Product;
+  amazon_products: Product;
+  tester_id: TesterInfo;
+}
+
+export interface TesterInfo {
+  variation_type: string;
+  id: string;
+  prolific_pid: string;
+  shopper_demographic: {
+    id_prolific: string;
+    age: number;
+    sex: string;
+    country_residence: string;
+  };
+}

@@ -5,9 +5,9 @@ import { SupabaseService } from 'supabase/supabase.service';
 export class AuthService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  public async validateUser(payload: any) {
+  public async validateUser(token: string) {
     try {
-      const user = await this.supabaseService.getUser(payload.sub);
+      const user = await this.supabaseService.getUser(token);
 
       return user;
     } catch (err) {

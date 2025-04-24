@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { TableName } from 'lib/enums';
 
 @Injectable()
 export class SupabaseService {
@@ -19,5 +20,25 @@ export class SupabaseService {
     if (error || !user) throw error;
 
     return user;
+  }
+
+  public async getById<T>({
+    tableName,
+    selectQuery = '*',
+    id,
+  }: {
+    tableName: TableName;
+    selectQuery?: string;
+    id: string;
+  }): Promise<T | null> {
+    const { data, error } = await this.client
+      .from(tableName)
+      .select(selectQuery)
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return data as T;
   }
 }
