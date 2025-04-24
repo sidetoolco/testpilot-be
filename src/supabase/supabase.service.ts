@@ -117,4 +117,18 @@ export class SupabaseService {
 
     return data;
   }
+
+  public async insert<T>(
+    tableName: TableName,
+    dto: object,
+  ): Promise<T[]> {
+    const { error, data } = await this.client
+      .from(tableName)
+      .insert(dto)
+      .select();
+
+    if (error) throw error;
+
+    return data;
+  }
 }

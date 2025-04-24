@@ -7,6 +7,7 @@ export enum TableName {
   PRODUCTS = 'products',
   TEST_TIMES = 'test_times',
   RESPONSES_SURVEYS = 'responses_surveys',
+  INSIGHT_STATUS = 'insight_status'
 }
 
 export enum Rpc {

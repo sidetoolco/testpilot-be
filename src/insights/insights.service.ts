@@ -18,6 +18,7 @@ export class InsightsService {
     private readonly testsService: TestsService,
     private readonly prolificService: ProlificService,
     private readonly productsService: ProductsService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   public async generateStudyInsights(studyId: string) {
@@ -38,12 +39,9 @@ export class InsightsService {
         );
       }
 
-      const studyDemographics =
-        await this.prolificService.getStudyDemographics(studyId);
       const test = await this.testsService.getTestById(testId);
-      const testDemographics =
-        await this.testsService.getTestDemographics(testId);
       const testVariations = await this.testsService.getTestVariations(testId);
+      const summaries = [];
 
       for (const variant of testVariations) {
         const chosenTimes = await this.testsService.getTestTimesByProductId(
@@ -71,9 +69,21 @@ export class InsightsService {
           chosenTimes.length,
           totalAverage,
         );
+
+        await this.saveInsightStatus(testId, variant.variation_type);
+        const savedSummary = await this.saveInsights(
+          testId,
+          summary.shareOfBuy,
+          summary.shareOfClicks,
+          summary.valuescore,
+          variant.variation_type,
+          variant.product_id,
+        );
+
+        summaries.push(savedSummary);
       }
 
-      return testVariations;
+      return summaries;
     } catch (error) {
       this.logger.error(
         `Failed to generate insights for study ${studyId}:`,
@@ -140,6 +150,14 @@ export class InsightsService {
     };
   }
 
+  private saveInsightStatus(testId: string, variantType: string) {
+    return this.supabaseService.insert(TableName.INSIGHT_STATUS, {
+      test_id: testId,
+      variant_type: variantType,
+      insight_data: 'summary',
+    });
+  }
+
   private calculateTotalAverage(surveys: ResponseSurvey[]) {
     // Calcular el promedio por encuesta
     const individualAverages = surveys.map((survey) => {
@@ -186,5 +204,24 @@ export class InsightsService {
       shareOfBuy: Number(shareOfBuy),
       shareOfClicks: Number(shareOfClicks),
     };
+  }
+
+  private saveInsights(
+    testId: string,
+    shareOfBuy: number,
+    shareOfClick: number,
+    valueScore: number,
+    variantType: string,
+    productId: string,
+  ) {
+    return this.supabaseService.insert(TableName.TEST_SUMMARY, {
+      test_id: testId,
+      share_of_buy: shareOfBuy,
+      share_of_click: shareOfClick,
+      value_score: valueScore,
+      variant_type: variantType,
+      product_id: productId,
+      win: false,
+    });
   }
 }
