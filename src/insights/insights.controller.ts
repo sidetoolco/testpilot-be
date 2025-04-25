@@ -9,12 +9,17 @@ export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
 
   @Get('/:testId')
-  getInsightsFromTest(@Param('testId') testId: string) {
-    return this.insightsService.getInsights(testId);
+  getInsightsDataFromTest(@Param('testId') testId: string) {
+    return this.insightsService.getInsightsData(testId);
   }
 
   @Post()
   generateStudyInsights(@Body() dto: GenerateStudyInsightsDto) {
     return this.insightsService.generateStudyInsights(dto.studyId);
+  }
+
+  @Post('/:testId')
+  generateAiInsights(@Param('testId') testId: string) {
+    return this.insightsService.saveAiInsights(testId);
   }
 }

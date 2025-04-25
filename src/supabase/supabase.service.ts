@@ -118,13 +118,25 @@ export class SupabaseService {
     return data;
   }
 
-  public async insert<T>(
-    tableName: TableName,
-    dto: object,
-  ): Promise<T[]> {
+  public async insert<T>(tableName: TableName, dto: object): Promise<T[]> {
     const { error, data } = await this.client
       .from(tableName)
       .insert(dto)
+      .select();
+
+    if (error) throw error;
+
+    return data;
+  }
+
+  public async upsert<T>(
+    tableName: TableName,
+    dto: Partial<T>,
+    onConflictField: keyof T,
+  ) {
+    const { error, data } = await this.client
+      .from(tableName)
+      .upsert(dto, { onConflict: String(onConflictField) })
       .select();
 
     if (error) throw error;

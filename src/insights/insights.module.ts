@@ -5,10 +5,17 @@ import { TestsModule } from 'tests/tests.module';
 import { ProlificModule } from 'prolific/prolific.module';
 import { ProductsModule } from 'products/products.module';
 import { SupabaseModule } from 'supabase/supabase.module';
+import { OpenAiModule } from 'open-ai/open-ai.module';
 
 @Module({
   providers: [InsightsService],
   controllers: [InsightsController],
-  imports: [TestsModule, ProlificModule, ProductsModule, SupabaseModule],
+  imports: [
+    TestsModule,
+    ProlificModule,
+    ProductsModule,
+    SupabaseModule,
+    OpenAiModule,
+  ],
 })
 export class InsightsModule {}
