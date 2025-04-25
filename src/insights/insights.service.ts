@@ -1,14 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
-import {
-  ResponseSurvey,
-  TestVariation,
-} from 'lib/interfaces/entities.interface';
+import { AiInsight, ResponseSurvey } from 'lib/interfaces/entities.interface';
+import { OpenAiService } from 'open-ai/open-ai.service';
 import { ProductsService } from 'products/products.service';
 import { ProlificService } from 'prolific/prolific.service';
 import { SupabaseService } from 'supabase/supabase.service';
 import { TestsService } from 'tests/tests.service';
+import { GENERATE_INSIGHTS_PROMPT } from './constants';
 
 @Injectable()
 export class InsightsService {
@@ -19,7 +18,26 @@ export class InsightsService {
     private readonly prolificService: ProlificService,
     private readonly productsService: ProductsService,
     private readonly supabaseService: SupabaseService,
+    private readonly openAiService: OpenAiService,
   ) {}
+
+  public async saveAiInsights(testId: string) {
+    try {
+      const aiInsights = await this.generateAiInsights(testId);
+      return await this.supabaseService.upsert<AiInsight>(
+        TableName.AI_INSIGHTS,
+        {
+          test_id: testId,
+          recommendations: aiInsights,
+        },
+        'test_id',
+      );
+    } catch (error) {
+      this.logger.error('Failed to generate AI insights:', error);
+      console.error(error);
+      throw error;
+    }
+  }
 
   public async generateStudyInsights(studyId: string) {
     this.logger.log(`Generating insights for study ${studyId}`);
@@ -89,10 +107,12 @@ export class InsightsService {
         `Failed to generate insights for study ${studyId}:`,
         error,
       );
+
+      throw error;
     }
   }
 
-  public async getInsights(testId: string) {
+  public async getInsightsData(testId: string) {
     const test = await this.testsService.getTestById(testId);
     const demographics = await this.testsService.getTestDemographics(testId);
     const variantSummaries = await this.testsService.getTestSummaries(testId);
@@ -223,5 +243,20 @@ export class InsightsService {
       product_id: productId,
       win: false,
     });
+  }
+
+  private async generateAiInsights(testId: string) {
+    const formattedData = await this.getInsightsData(testId);
+
+    return this.openAiService.createChatCompletion([
+      {
+        role: 'system',
+        content: GENERATE_INSIGHTS_PROMPT,
+      },
+      {
+        role: 'user',
+        content: `Here is the test data to analyze:\n\n${formattedData}`,
+      },
+    ]);
   }
 }

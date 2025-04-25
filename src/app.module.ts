@@ -7,6 +7,7 @@ import { TestsModule } from './tests/tests.module';
 import { InsightsModule } from './insights/insights.module';
 import { ProlificModule } from './prolific/prolific.module';
 import { ProductsModule } from './products/products.module';
+import { OpenAiModule } from './open-ai/open-ai.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ProductsModule } from './products/products.module';
     InsightsModule,
     ProlificModule,
     ProductsModule,
+    OpenAiModule,
   ],
   controllers: [AppController],
   providers: [],
