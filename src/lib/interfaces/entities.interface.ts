@@ -28,3 +28,63 @@ export interface TestCompetitor {
     price: number;
   };
 }
+
+export interface TestVariation {
+  id: string;
+  test_id: string;
+  product_id: string;
+  product: Product;
+  variation_type: string;
+  created_at: string;
+  updated_at: string;
+  prolific_status: string;
+  prolific_test_id: string;
+}
+
+export interface Product {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  image_url: string;
+  images: string[];
+  rating: number;
+  is_competitor: boolean;
+  loads: number;
+  product_url?: string;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+  reviews_count: number;
+  bullet_points: string[];
+  brand?: string;
+  responses_surveys: ResponseSurvey[];
+}
+
+export interface ResponseSurvey {
+  id: string;
+  brand: number;
+  value: number;
+  tester_id: string;
+  appearance: number;
+  confidence: number;
+  created_at: Date;
+  likes_most: string;
+  convenience: number;
+  improve_suggestions: string;
+}
+
+export interface TestTime {
+  id: string;
+}
+
+export interface ResponseSurvey {
+  id: string;
+  test_id: string;
+  product_id: string;
+  appearance: number;
+  confidence: number;
+  value: number;
+  convenience: number;
+  brand: number;
+}
