@@ -88,3 +88,13 @@ export interface ResponseSurvey {
   convenience: number;
   brand: number;
 }
+
+export interface AiInsight {
+  id: number;
+  created_at: string;
+  test_id: string;
+  comparison_between_variants: string;
+  purchase_drivers: string;
+  recommendations: string;
+  sendEmail?: boolean;
+}
