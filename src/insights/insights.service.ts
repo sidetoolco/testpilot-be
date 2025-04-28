@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
 import { AiInsight, ResponseSurvey } from 'lib/interfaces/entities.interface';
@@ -34,8 +38,7 @@ export class InsightsService {
       );
     } catch (error) {
       this.logger.error('Failed to generate AI insights:', error);
-      console.error(error);
-      throw error;
+      throw new InternalServerErrorException(error?.message || 'Unknown error');
     }
   }
 
@@ -43,63 +46,14 @@ export class InsightsService {
     this.logger.log(`Generating insights for study ${studyId}`);
 
     try {
-      const study = await this.prolificService.getStudy(studyId);
-      const variationMatch = study.internal_name?.match(/-(\w)$/);
-      const variation = variationMatch ? variationMatch[1] : null;
-      const testId = study.internal_name?.replace(/-\w$/, '') || null;
-      const formattedStatus = this.prolificService.formatStatus(study.status);
+      const { test, testVariations, testId } =
+        await this.fetchStudyData(studyId);
 
-      if (variation && testId) {
-        await this.testsService.updateTestVariationStatus(
-          formattedStatus,
-          testId,
-          variation,
-        );
-      }
-
-      const test = await this.testsService.getTestById(testId);
-      const testVariations = await this.testsService.getTestVariations(testId);
-      const summaries = [];
-
-      for (const variant of testVariations) {
-        const chosenTimes = await this.testsService.getTestTimesByProductId(
-          variant.product_id,
-        );
-        const surveys = await this.productsService.getProductSurveys(
-          variant.product_id,
-          testId,
-        );
-        const totalClicksPerVariant =
-          await this.testsService.getTestTimesByTestVariation(
-            testId,
-            variant.variation_type,
-          );
-
-        const totalAverage = this.calculateTotalAverage(surveys);
-
-        const summary = this.generateVariantSummary(
-          test.name,
-          variant.product.title,
-          testId,
-          variant.variation_type,
-          surveys.length,
-          totalClicksPerVariant.length,
-          chosenTimes.length,
-          totalAverage,
-        );
-
-        await this.saveInsightStatus(testId, variant.variation_type);
-        const savedSummary = await this.saveInsights(
-          testId,
-          summary.shareOfBuy,
-          summary.shareOfClicks,
-          summary.valuescore,
-          variant.variation_type,
-          variant.product_id,
-        );
-
-        summaries.push(savedSummary);
-      }
+      const summaries = await Promise.all(
+        testVariations.map((variant) =>
+          this.processVariant(test, variant, testId),
+        ),
+      );
 
       return summaries;
     } catch (error) {
@@ -107,7 +61,6 @@ export class InsightsService {
         `Failed to generate insights for study ${studyId}:`,
         error,
       );
-
       throw error;
     }
   }
@@ -258,5 +211,64 @@ export class InsightsService {
         content: `Here is the test data to analyze:\n\n${formattedData}`,
       },
     ]);
+  }
+
+  private async fetchStudyData(studyId: string) {
+    const study = await this.prolificService.getStudy(studyId);
+    const variationMatch = study.internal_name?.match(/-(\w)$/);
+    const variation = variationMatch ? variationMatch[1] : null;
+    const testId = study.internal_name?.replace(/-\w$/, '') || null;
+    const formattedStatus = this.prolificService.formatStatus(study.status);
+
+    if (variation && testId) {
+      await this.testsService.updateTestVariationStatus(
+        formattedStatus,
+        testId,
+        variation,
+      );
+    }
+
+    const test = await this.testsService.getTestById(testId);
+    const testVariations = await this.testsService.getTestVariations(testId);
+
+    return { test, testVariations, testId };
+  }
+
+  private async processVariant(test: any, variant: any, testId: string) {
+    // Parallelize independent queries
+    const [chosenTimes, surveys, totalClicksPerVariant] = await Promise.all([
+      this.testsService.getTestTimesByProductId(variant.product_id),
+      this.productsService.getProductSurveys(variant.product_id, testId),
+      this.testsService.getTestTimesByTestVariation(
+        testId,
+        variant.variation_type,
+      ),
+    ]);
+
+    const totalAverage = this.calculateTotalAverage(surveys);
+
+    const summary = this.generateVariantSummary(
+      test.name,
+      variant.product.title,
+      testId,
+      variant.variation_type,
+      surveys.length,
+      totalClicksPerVariant.length,
+      chosenTimes.length,
+      totalAverage,
+    );
+
+    await this.saveInsightStatus(testId, variant.variation_type);
+
+    const savedSummary = await this.saveInsights(
+      testId,
+      summary.shareOfBuy,
+      summary.shareOfClicks,
+      summary.valuescore,
+      variant.variation_type,
+      variant.product_id,
+    );
+
+    return savedSummary;
   }
 }
