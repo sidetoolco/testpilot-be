@@ -143,4 +143,39 @@ export class SupabaseService {
 
     return data;
   }
+  
+  public async findOne<T>(
+    tableName: TableName,
+    conditions: Record<string, any>,
+  ): Promise<T | null> {
+    let query = this.client.from(tableName).select('*');
+
+    for (const [key, value] of Object.entries(conditions)) {
+      query = query.eq(key, value);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) throw error;
+
+    return data as T | null;
+  }
+
+  public async findMany<T>(
+    tableName: TableName,
+    conditions: Record<string, any>,
+    selectQuery?: string,
+  ): Promise<T[]> {
+    let query = this.client.from(tableName).select(selectQuery || '*');
+
+    for (const [key, value] of Object.entries(conditions)) {
+      query = query.eq(key, value);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    return data as T[];
+  }
 }
