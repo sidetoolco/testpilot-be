@@ -3,7 +3,7 @@ import { InsightsService } from './insights.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { GenerateStudyInsightsDto } from './dto';
 
-// @UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('insights')
 export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
