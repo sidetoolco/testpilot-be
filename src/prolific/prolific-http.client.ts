@@ -8,11 +8,16 @@ export class ProlificHttpClient {
   private readonly logger = new Logger(ProlificHttpClient.name);
 
   constructor(private readonly configService: ConfigService) {
+    const prolificToken = this.configService.get('PROLIFIC_API_TOKEN');
+    if (!prolificToken) {
+      throw new Error('PROLIFIC_API_TOKEN is not defined in environment variables');
+    }
+
     this.client = axios.create({
       baseURL: 'https://api.prolific.com/api/v1',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Token ${this.configService.get('PROLIFIC_API_TOKEN')}`,
+        Authorization: `Token ${prolificToken}`,
       },
       timeout: 10000, // 10 seconds
     });
