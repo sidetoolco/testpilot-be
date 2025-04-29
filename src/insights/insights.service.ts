@@ -1,7 +1,17 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
-import { AiInsight, ResponseSurvey, TestVariation, TestSummary } from 'lib/interfaces/entities.interface';
+import {
+  AiInsight,
+  ResponseSurvey,
+  TestVariation,
+  TestSummary,
+} from 'lib/interfaces/entities.interface';
 import { OpenAiService } from 'open-ai/open-ai.service';
 import { ProductsService } from 'products/products.service';
 import { ProlificService } from 'prolific/prolific.service';
@@ -28,7 +38,7 @@ export class InsightsService {
     private readonly productsService: ProductsService,
     private readonly supabaseService: SupabaseService,
     private readonly openAiService: OpenAiService,
-  ) { }
+  ) {}
 
   public async saveAiInsights(testId: string) {
     try {
@@ -48,7 +58,10 @@ export class InsightsService {
         'test_id',
       );
     } catch (error) {
-      this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
+      this.logger.error(
+        `Failed to generate AI insights for test ${testId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -56,7 +69,7 @@ export class InsightsService {
   /**
    * Genera insights detallados para un estudio específico, procesando datos de encuestas por variantes,
    * métricas de variantes y comparaciones competitivas.
-   * 
+   *
    * @param {string} studyId - ID del estudio para el cual se generarán los insights
    * @returns {Promise<{
    *   testId: string,
@@ -84,26 +97,42 @@ export class InsightsService {
 
       const { variation, testId } = this.extractTestInfo(study);
       if (!variation || !testId) {
-        throw new BadRequestException('Invalid study format - missing variation or test ID');
+        throw new BadRequestException(
+          'Invalid study format - missing variation or test ID',
+        );
       }
 
       const formattedStatus = this.prolificService.formatStatus(study.status);
-      await this.testsService.updateTestVariationStatus(formattedStatus, testId, variation);
+      await this.testsService.updateTestVariationStatus(
+        formattedStatus,
+        testId,
+        variation,
+      );
 
       const [test, testVariations] = await Promise.all([
         this.testsService.getTestById(testId),
-        this.testsService.getTestVariations(testId)
+        this.testsService.getTestVariations(testId),
       ]);
 
-      const variantChoosen = testVariations.find(v => v.variation_type === variation);
+      const variantChoosen = testVariations.find(
+        (v) => v.variation_type === variation,
+      );
       if (!variantChoosen) {
-        throw new NotFoundException(`Variant ${variation} not found for test ${testId}`);
+        throw new NotFoundException(
+          `Variant ${variation} not found for test ${testId}`,
+        );
       }
 
       const [chosenTimes, surveys, totalClicksPerVariant] = await Promise.all([
         this.testsService.getTestTimesByProductId(variantChoosen.product_id),
-        this.productsService.getProductSurveys(variantChoosen.product_id, testId),
-        this.testsService.getTestTimesByTestVariation(testId, variantChoosen.variation_type)
+        this.productsService.getProductSurveys(
+          variantChoosen.product_id,
+          testId,
+        ),
+        this.testsService.getTestTimesByTestVariation(
+          testId,
+          variantChoosen.variation_type,
+        ),
       ]);
 
       const totalAverage = this.calculateTotalAverage(surveys);
@@ -118,20 +147,19 @@ export class InsightsService {
         totalAverage,
       );
 
-
-
-      const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] = await Promise.all([
-        this.purchaseDrivers(testId, variation),
-        this.competitiveInsights(test, variantChoosen, testId),
-        this.saveInsights(
-          testId,
-          summary.shareOfBuy,
-          summary.shareOfClicks,
-          summary.valuescore,
-          variantChoosen.variation_type,
-          variantChoosen.product_id,
-        )
-      ]);
+      const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
+        await Promise.all([
+          this.purchaseDrivers(testId, variation),
+          this.competitiveInsights(test, variantChoosen, testId),
+          this.saveInsights(
+            testId,
+            summary.shareOfBuy,
+            summary.shareOfClicks,
+            summary.valuescore,
+            variantChoosen.variation_type,
+            variantChoosen.product_id,
+          ),
+        ]);
 
       await this.saveInsightStatus(testId, variantChoosen.variation_type);
 
@@ -143,7 +171,10 @@ export class InsightsService {
         competitiveInsights: variantCompetitiveInsights,
       };
     } catch (error) {
-      this.logger.error(`Failed to generate insights for study ${studyId}:`, error);
+      this.logger.error(
+        `Failed to generate insights for study ${studyId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -155,19 +186,27 @@ export class InsightsService {
     return { variation, testId };
   }
 
-  async competitiveInsights(test: TestData, variation: TestVariation, testId: string) {
+  async competitiveInsights(
+    test: TestData,
+    variation: TestVariation,
+    testId: string,
+  ) {
     try {
       const [testCompetitors, competitorsComparison] = await Promise.all([
-        this.supabaseService.findMany(TableName.TEST_COMPETITORS, {
-          test_id: testId,
-        }, `
+        this.supabaseService.findMany(
+          TableName.TEST_COMPETITORS,
+          {
+            test_id: testId,
+          },
+          `
           *,
           product:amazon_products ( title, image_url, price, rating, reviews_count )
-        `),
+        `,
+        ),
         this.supabaseService.findMany(TableName.RESPONSES_COMPARISONS, {
           test_id: testId,
-          product_id: variation.product_id
-        })
+          product_id: variation.product_id,
+        }),
       ]);
 
       if (!testCompetitors?.length) {
@@ -175,19 +214,29 @@ export class InsightsService {
       }
 
       const groupedData = this.groupCompetitorMetrics(competitorsComparison);
-      const results = this.calculateCompetitorResults(testCompetitors, groupedData, variation, testId, competitorsComparison.length);
+      const results = this.calculateCompetitorResults(
+        testCompetitors,
+        groupedData,
+        variation,
+        testId,
+        competitorsComparison.length,
+      );
 
       // ['test_id', 'variant_type', 'competitor_product_id'] agrupar por test_id, variant_type, competitor_product_id
       return await Promise.all(
-        results.map(result =>
-          this.supabaseService.insert(
+        results.map((result) =>
+          this.supabaseService.upsert(
             TableName.COMPETITIVE_INSIGHTS,
             result,
-          )
-        )
+            'competitor_product_id,test_id,variant_type',
+          ),
+        ),
       );
     } catch (error) {
-      this.logger.error(`Failed to generate competitive insights for test ${testId}:`, error);
+      this.logger.error(
+        `Failed to generate competitive insights for test ${testId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -208,16 +257,21 @@ export class InsightsService {
           averageAppearance: 0,
           averageConfidence: 0,
           averageBrand: 0,
-          averageConvenience: 0
+          averageConvenience: 0,
         };
       }
 
       acc[competitor_id].count++;
-      acc[competitor_id].averageValue += curr.value || curr['average_value'] || 0;
-      acc[competitor_id].averageAppearance += curr.appearance || curr['average_appearance'] || 0;
-      acc[competitor_id].averageConfidence += curr.confidence || curr['average_confidence'] || 0;
-      acc[competitor_id].averageBrand += curr.brand || curr['average_brand'] || 0;
-      acc[competitor_id].averageConvenience += curr.convenience || curr['average_convenience'] || 0;
+      acc[competitor_id].averageValue +=
+        curr.value || curr['average_value'] || 0;
+      acc[competitor_id].averageAppearance +=
+        curr.appearance || curr['average_appearance'] || 0;
+      acc[competitor_id].averageConfidence +=
+        curr.confidence || curr['average_confidence'] || 0;
+      acc[competitor_id].averageBrand +=
+        curr.brand || curr['average_brand'] || 0;
+      acc[competitor_id].averageConvenience +=
+        curr.convenience || curr['average_convenience'] || 0;
 
       return acc;
     }, {});
@@ -228,18 +282,19 @@ export class InsightsService {
     groupedData: Record<string, any>,
     variation: TestVariation,
     testId: string,
-    totalResponses: number
+    totalResponses: number,
   ) {
-    return competitors.map(competitor => {
-      const metrics = groupedData[competitor.id] || groupedData[competitor.product_id] || {
-        count: 0,
-        shareofbuy: 0,
-        averageValue: 0,
-        averageAppearance: 0,
-        averageConfidence: 0,
-        averageBrand: 0,
-        averageConvenience: 0
-      };
+    return competitors.map((competitor) => {
+      const metrics = groupedData[competitor.id] ||
+        groupedData[competitor.product_id] || {
+          count: 0,
+          shareofbuy: 0,
+          averageValue: 0,
+          averageAppearance: 0,
+          averageConfidence: 0,
+          averageBrand: 0,
+          averageConvenience: 0,
+        };
 
       const count = metrics.count;
 
@@ -253,7 +308,7 @@ export class InsightsService {
         trust: this.calculateAverage(metrics.averageBrand, count),
         value: this.calculateAverage(metrics.averageValue, count),
         share_of_buy: this.calculateShareOfBuy(count, totalResponses),
-        count
+        count,
       };
     });
   }
@@ -273,33 +328,42 @@ export class InsightsService {
         this.supabaseService.findOne<TestVariation>(TableName.TEST_VARIATIONS, {
           test_id: testId,
           variation_type: variant,
-        })
+        }),
       ]);
 
       if (!test) throw new NotFoundException('Test not found');
       if (!variation) throw new NotFoundException('Variation not found');
 
-      const responses = await this.supabaseService.findMany<ResponseSurvey & { test_id: string; product_id: string }>(
-        TableName.RESPONSES_SURVEYS,
-        {
-          test_id: testId,
-          product_id: variation.product_id,
-        }
-      );
+      const responses = await this.supabaseService.findMany<
+        ResponseSurvey & { test_id: string; product_id: string }
+      >(TableName.RESPONSES_SURVEYS, {
+        test_id: testId,
+        product_id: variation.product_id,
+      });
 
       if (!responses?.length) throw new NotFoundException('No responses found');
 
       const totals = this.calculateResponseTotals(responses);
       const count = responses.length;
-      const payload = this.createPurchaseDriversPayload(testId, variant, variation.product_id, totals, count);
+      const payload = this.createPurchaseDriversPayload(
+        testId,
+        variant,
+        variation.product_id,
+        totals,
+        count,
+      );
 
       // ['test_id', 'variant_type'] agrupar por test_id, variant_type
-      return await this.supabaseService.insert<typeof payload>(
+      return await this.supabaseService.upsert<typeof payload>(
         TableName.PURCHASE_DRIVERS,
         payload,
+        'test_id,variant_type,product_id'
       );
     } catch (error) {
-      this.logger.error(`Failed to generate purchase drivers for test ${testId}, variant ${variant}:`, error);
+      this.logger.error(
+        `Failed to generate purchase drivers for test ${testId}, variant ${variant}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -320,7 +384,7 @@ export class InsightsService {
         convenience: 0,
         brand: 0,
         value: 0,
-      }
+      },
     );
   }
 
@@ -329,7 +393,7 @@ export class InsightsService {
     variant: string,
     productId: string,
     totals: VariantMetrics,
-    count: number
+    count: number,
   ) {
     const round = (n: number) => parseFloat((n / count).toFixed(1));
 
@@ -468,15 +532,19 @@ export class InsightsService {
     variantType: string,
     productId: string,
   ) {
-    return this.supabaseService.insert(TableName.TEST_SUMMARY, {
-      test_id: testId,
-      share_of_buy: shareOfBuy,
-      share_of_click: shareOfClick,
-      value_score: valueScore,
-      variant_type: variantType,
-      product_id: productId,
-      win: false,
-    });
+    return this.supabaseService.upsert(
+      TableName.TEST_SUMMARY,
+      {
+        test_id: testId,
+        share_of_buy: shareOfBuy,
+        share_of_click: shareOfClick,
+        value_score: valueScore,
+        variant_type: variantType,
+        product_id: productId,
+        win: false,
+      },
+      'product_id,test_id,variant_type',
+    );
   }
 
   private async generateAiInsights(testId: string) {
