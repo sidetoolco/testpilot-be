@@ -19,6 +19,7 @@ import { SupabaseService } from 'supabase/supabase.service';
 import { TestsService } from 'tests/tests.service';
 import { GENERATE_INSIGHTS_PROMPT } from './constants';
 import { TestData } from 'tests/interfaces';
+import { insightsFormatter } from './formatters';
 
 interface VariantMetrics {
   appearance: number;
@@ -53,7 +54,7 @@ export class InsightsService {
         TableName.AI_INSIGHTS,
         {
           test_id: testId,
-          recommendations: aiInsights,
+          ...aiInsights,
         },
         'test_id',
       );
@@ -357,7 +358,7 @@ export class InsightsService {
       return await this.supabaseService.upsert<typeof payload>(
         TableName.PURCHASE_DRIVERS,
         payload,
-        'test_id,variant_type,product_id'
+        'test_id,variant_type,product_id',
       );
     } catch (error) {
       this.logger.error(
@@ -550,7 +551,7 @@ export class InsightsService {
   private async generateAiInsights(testId: string) {
     const formattedData = await this.getInsightsData(testId);
 
-    return this.openAiService.createChatCompletion([
+    const unformattedInsights = await this.openAiService.createChatCompletion([
       {
         role: 'system',
         content: GENERATE_INSIGHTS_PROMPT,
@@ -560,6 +561,8 @@ export class InsightsService {
         content: `Here is the test data to analyze:\n\n${formattedData}`,
       },
     ]);
+
+    return insightsFormatter(unformattedInsights);
   }
 
   private async fetchStudyData(studyId: string) {
