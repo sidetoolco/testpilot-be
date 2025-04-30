@@ -132,18 +132,18 @@ export class SupabaseService {
   public async upsert<T>(
     tableName: TableName,
     dto: Partial<T>,
-    onConflictField: keyof T,
+    onConflictField: string,
   ) {
     const { error, data } = await this.client
       .from(tableName)
-      .upsert(dto, { onConflict: String(onConflictField) })
+      .upsert(dto, { onConflict: onConflictField })
       .select();
 
     if (error) throw error;
 
     return data;
   }
-  
+
   public async findOne<T>(
     tableName: TableName,
     conditions: Record<string, any>,
