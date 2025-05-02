@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProlificHttpClient } from './prolific-http.client';
-import { ProlificStudy } from './interfaces';
+import { ProlificStudy, ProlificStudySubmission } from './interfaces';
 import { StudyStatus } from './types';
 
 @Injectable()
@@ -27,6 +27,21 @@ export class ProlificService {
       return this.formatStudyDemographics(demographics);
     } catch (error) {
       this.logger.error(`Failed to get study ${studyId} demographics:`, error);
+      throw error;
+    }
+  }
+
+  public async getStudySubmissions(studyId: string, onlyInvalid = false) {
+    try {
+      const { results } = await this.httpClient.get<ProlificStudySubmission>(
+        `/submissions/?study=${studyId}`,
+      );
+
+      return onlyInvalid
+        ? results.filter(({ status }) => status !== 'APPROVED')
+        : results;
+    } catch (error) {
+      this.logger.error(`Failed to get study ${studyId} submissions: ${error}`);
       throw error;
     }
   }

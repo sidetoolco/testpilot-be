@@ -11,7 +11,8 @@ export enum TableName {
   AI_INSIGHTS = 'ia_insights',
   TEST_SUMMARY = 'summary',
   PURCHASE_DRIVERS = 'purchase_drivers',
-  COMPETITIVE_INSIGHTS = 'competitive_insights'
+  COMPETITIVE_INSIGHTS = 'competitive_insights',
+  TESTERS_SESSION = 'testers_session',
 }
 
 export enum Rpc {

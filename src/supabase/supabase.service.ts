@@ -178,4 +178,20 @@ export class SupabaseService {
 
     return data as T[];
   }
+
+  public async delete(tableName: TableName, conditions: object) {
+    let query = this.client.from(tableName).delete();
+
+    Object.entries(conditions).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        query = query.in(key, value);
+      } else {
+        query = query.eq(key, value);
+      }
+    });
+
+    const { error } = await query;
+
+    if (error) throw error;
+  }
 }

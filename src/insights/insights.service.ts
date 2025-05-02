@@ -10,7 +10,6 @@ import {
   AiInsight,
   ResponseSurvey,
   TestVariation,
-  TestSummary,
 } from 'lib/interfaces/entities.interface';
 import { OpenAiService } from 'open-ai/open-ai.service';
 import { ProductsService } from 'products/products.service';
@@ -91,6 +90,13 @@ export class InsightsService {
     this.logger.log(`Generating insights for study ${studyId}`);
 
     try {
+      const invalidStudySubmissions =
+        await this.prolificService.getStudySubmissions(studyId, true);
+
+      await this.testsService.cleanInvalidTesterSessions(
+        invalidStudySubmissions.map(({ id }) => id),
+      );
+
       const study = await this.prolificService.getStudy(studyId);
       if (!study) {
         throw new NotFoundException(`Study ${studyId} not found`);
