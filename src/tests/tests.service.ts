@@ -14,6 +14,7 @@ import {
   TestSummary,
   TestTime,
   TestVariation,
+  ShopperDemographics,
 } from 'lib/interfaces/entities.interface';
 
 @Injectable()
@@ -41,6 +42,14 @@ export class TestsService {
       condition: 'test_id',
       value: testId,
     });
+  }
+
+  public async upsertTestDemographics(demographics: ShopperDemographics[]) {
+    return this.supabaseService.upsert<ShopperDemographics>(
+      TableName.SHOPPER_DEMOGRAPHICS,
+      demographics,
+      'id_prolific'
+    );
   }
 
   public getTestSummaries(testId: string) {

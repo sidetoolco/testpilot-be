@@ -102,6 +102,24 @@ export class InsightsService {
         throw new NotFoundException(`Study ${studyId} not found`);
       }
 
+      //traer data dmografica de testers
+      const studyDemographics = await this.prolificService.getStudyDemographics(studyId);
+      //filtrar que sean solo los aprobados
+      const approvedTesters = studyDemographics.filter((tester) => tester['Sex'] !== 'CONSENT_REVOKED');
+      const filteredDemographics = approvedTesters.map((tester) => ({
+        age: tester['Age'],
+        sex: tester['Sex'],
+        ethnicity: tester['Ethnicity simplified'],
+        country_birth: tester['Country of birth'],
+        country_residence: tester['Country of residence'],
+        nationality: tester['Nationality'],
+        student: tester['Student status'],
+        employment_status: tester['Employment status'],
+        language: tester['Language'],
+        id_prolific: tester['Participant id'],
+      }));
+      await this.testsService.upsertTestDemographics(filteredDemographics);
+
       const { variation, testId } = this.extractTestInfo(study);
       if (!variation || !testId) {
         throw new BadRequestException(

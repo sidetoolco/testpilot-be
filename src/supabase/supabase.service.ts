@@ -131,7 +131,7 @@ export class SupabaseService {
 
   public async upsert<T>(
     tableName: TableName,
-    dto: Partial<T>,
+    dto: Partial<T> | Partial<T>[],
     onConflictField: string,
   ) {
     const { error, data } = await this.client

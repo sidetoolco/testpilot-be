@@ -20,6 +20,19 @@ export interface TestSummary {
   product_id: string;
 }
 
+export interface ShopperDemographics {
+  age: any;
+  sex: any;
+  ethnicity: any;
+  country_birth: any;
+  country_residence: any;
+  nationality: any;
+  student: any;
+  employment_status: any;
+  language: any;
+  id_prolific: any;
+}
+
 export interface TestCompetitor {
   product_id: string;
   product: {
