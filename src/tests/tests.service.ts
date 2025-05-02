@@ -79,7 +79,7 @@ export class TestsService {
   public getTestVariations(testId: string) {
     return this.supabaseService.getByCondition<TestVariation[]>({
       tableName: TableName.TEST_VARIATIONS,
-      selectQuery: "*, product:products(*)",
+      selectQuery: '*, product:products(*)',
       condition: 'test_id',
       value: testId,
       single: false,
@@ -108,6 +108,12 @@ export class TestsService {
           value: variationType,
         },
       ],
+    });
+  }
+
+  public cleanInvalidTesterSessions(prolificIds: string[]) {
+    return this.supabaseService.delete(TableName.TESTERS_SESSION, {
+      prolific_pid: prolificIds,
     });
   }
 
