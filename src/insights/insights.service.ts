@@ -120,6 +120,8 @@ export class InsightsService {
         this.testsService.getTestById(testId),
         this.testsService.getTestVariations(testId),
       ]);
+      //total shopper per session
+      const shopperCount = test.demographics.testerCount;
 
       const variantChoosen = testVariations.find(
         (v) => v.variation_type === variation,
@@ -152,12 +154,13 @@ export class InsightsService {
         totalClicksPerVariant.length,
         chosenTimes.length,
         totalAverage,
+        shopperCount,
       );
 
       const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
         await Promise.all([
           this.purchaseDrivers(testId, variation),
-          this.competitiveInsights(test, variantChoosen, testId),
+          this.competitiveInsights(test, variantChoosen, testId, shopperCount),
           this.saveInsights(
             testId,
             summary.shareOfBuy,
@@ -197,6 +200,7 @@ export class InsightsService {
     test: TestData,
     variation: TestVariation,
     testId: string,
+    shopperCount: number,
   ) {
     try {
       const [testCompetitors, competitorsComparison] = await Promise.all([
@@ -226,7 +230,7 @@ export class InsightsService {
         groupedData,
         variation,
         testId,
-        competitorsComparison.length,
+        shopperCount,
       );
 
       // ['test_id', 'variant_type', 'competitor_product_id'] agrupar por test_id, variant_type, competitor_product_id
@@ -289,7 +293,7 @@ export class InsightsService {
     groupedData: Record<string, any>,
     variation: TestVariation,
     testId: string,
-    totalResponses: number,
+    shopperCount: number,
   ) {
     return competitors.map((competitor) => {
       const metrics = groupedData[competitor.id] ||
@@ -309,12 +313,12 @@ export class InsightsService {
         variant_type: variation.variation_type,
         test_id: testId,
         competitor_product_id: competitor.product_id,
-        aesthetics: this.calculateAverage(metrics.averageAppearance, count),
-        utility: this.calculateAverage(metrics.averageConfidence, count),
-        convenience: this.calculateAverage(metrics.averageConvenience, count),
-        trust: this.calculateAverage(metrics.averageBrand, count),
-        value: this.calculateAverage(metrics.averageValue, count),
-        share_of_buy: this.calculateShareOfBuy(count, totalResponses),
+        aesthetics: (this.calculateAverage(metrics.averageAppearance, count) - 3).toFixed(1),
+        utility: (this.calculateAverage(metrics.averageConfidence, count) - 3).toFixed(1),
+        convenience: (this.calculateAverage(metrics.averageConvenience, count) - 3).toFixed(1),
+        trust: (this.calculateAverage(metrics.averageBrand, count) - 3).toFixed(1),
+        value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(1),
+        share_of_buy: ((count / shopperCount) * 100).toFixed(1),
         count,
       };
     });
@@ -511,8 +515,9 @@ export class InsightsService {
     totalClicksPerVariant: number,
     chosenTimesAmount: number,
     totalAverage: number,
+    shopperCount: number,
   ) {
-    const shareOfBuy = ((surveysAmount / totalClicksPerVariant) * 100).toFixed(
+    const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(
       1,
     );
     const shareOfClicks = (
