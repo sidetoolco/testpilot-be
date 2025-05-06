@@ -6,6 +6,7 @@ import { ProlificModule } from 'prolific/prolific.module';
 import { ProductsModule } from 'products/products.module';
 import { SupabaseModule } from 'supabase/supabase.module';
 import { OpenAiModule } from 'open-ai/open-ai.module';
+import { AdalineModule } from 'adaline/adaline.module';
 
 @Module({
   providers: [InsightsService],
@@ -16,6 +17,7 @@ import { OpenAiModule } from 'open-ai/open-ai.module';
     ProductsModule,
     SupabaseModule,
     OpenAiModule,
+    AdalineModule,
   ],
 })
 export class InsightsModule {}

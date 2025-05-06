@@ -9,6 +9,6 @@ export class TestsController {
 
   @Get('/:id')
   getTestData(@Param('id') testId: string) {
-    return this.testsService.getTestById(testId);
+    return this.testsService.getRawDataByTestId(testId);
   }
 }

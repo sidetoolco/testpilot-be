@@ -1,10 +1,12 @@
+import { TestObjective } from "tests/enums";
+
 export interface RawTestData {
   id: string;
   name: string;
   status: 'draft' | 'active' | 'complete';
   search_term: string;
   created_at: string;
-  objective: string;
+  objective: TestObjective;
   updated_at: string;
   competitors: Array<{
     product: {

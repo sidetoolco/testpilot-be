@@ -1,3 +1,5 @@
+import { TestObjective } from 'tests/enums';
+
 export interface TestDemographics {
   id: string;
   test_id: string;
@@ -97,4 +99,10 @@ export interface AiInsight {
   purchase_drivers: string;
   recommendations: string;
   sendEmail?: boolean;
+}
+
+export interface Test {
+  id: string;
+  name: string;
+  objective: TestObjective;
 }
