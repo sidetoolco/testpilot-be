@@ -32,6 +32,7 @@ export class AdalineService {
         promptId = '52984cf9-2c77-4b47-8d01-87e272f24dd3';
         break;
       case TestObjective.PRICE_SENSITIVITY:
+      default:
         promptId = '4ea68348-1218-4ab0-be95-ad15c48bf05c';
         break;
     }
