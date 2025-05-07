@@ -16,9 +16,11 @@ import { ProductsService } from 'products/products.service';
 import { ProlificService } from 'prolific/prolific.service';
 import { SupabaseService } from 'supabase/supabase.service';
 import { TestsService } from 'tests/tests.service';
-import { GENERATE_INSIGHTS_PROMPT } from './constants';
 import { TestData } from 'tests/interfaces';
 import { insightsFormatter } from './formatters';
+import { AdalineService } from 'adaline/adaline.service';
+import { TestObjective } from 'tests/enums';
+import { ChatCompletionMessageParam } from 'openai/resources/chat';
 
 interface VariantMetrics {
   appearance: number;
@@ -38,6 +40,7 @@ export class InsightsService {
     private readonly productsService: ProductsService,
     private readonly supabaseService: SupabaseService,
     private readonly openAiService: OpenAiService,
+    private readonly adalineService: AdalineService,
   ) {}
 
   public async saveAiInsights(testId: string) {
@@ -46,7 +49,8 @@ export class InsightsService {
         throw new BadRequestException('Test ID is required');
       }
       this.logger.log(`Generating AI insights for test ${testId}`);
-      const aiInsights = await this.generateAiInsights(testId);
+      const { objective } = await this.testsService.getTestById(testId);
+      const aiInsights = await this.generateAiInsights(testId, objective);
 
       this.logger.log(`Saving AI insights for test ${testId}`);
       return await this.supabaseService.upsert<AiInsight>(
@@ -117,7 +121,7 @@ export class InsightsService {
       );
 
       const [test, testVariations] = await Promise.all([
-        this.testsService.getTestById(testId),
+        this.testsService.getRawDataByTestId(testId),
         this.testsService.getTestVariations(testId),
       ]);
       //total shopper per session
@@ -313,11 +317,21 @@ export class InsightsService {
         variant_type: variation.variation_type,
         test_id: testId,
         competitor_product_id: competitor.product_id,
-        aesthetics: (this.calculateAverage(metrics.averageAppearance, count) - 3).toFixed(1),
-        utility: (this.calculateAverage(metrics.averageConfidence, count) - 3).toFixed(1),
-        convenience: (this.calculateAverage(metrics.averageConvenience, count) - 3).toFixed(1),
-        trust: (this.calculateAverage(metrics.averageBrand, count) - 3).toFixed(1),
-        value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(1),
+        aesthetics: (
+          this.calculateAverage(metrics.averageAppearance, count) - 3
+        ).toFixed(1),
+        utility: (
+          this.calculateAverage(metrics.averageConfidence, count) - 3
+        ).toFixed(1),
+        convenience: (
+          this.calculateAverage(metrics.averageConvenience, count) - 3
+        ).toFixed(1),
+        trust: (this.calculateAverage(metrics.averageBrand, count) - 3).toFixed(
+          1,
+        ),
+        value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(
+          1,
+        ),
         share_of_buy: ((count / shopperCount) * 100).toFixed(1),
         count,
       };
@@ -422,7 +436,7 @@ export class InsightsService {
   }
 
   public async getInsightsData(testId: string) {
-    const test = await this.testsService.getTestById(testId);
+    const test = await this.testsService.getRawDataByTestId(testId);
     const demographics = await this.testsService.getTestDemographics(testId);
     const variantSummaries = await this.testsService.getTestSummaries(testId);
     const competitorsInsights =
@@ -517,9 +531,7 @@ export class InsightsService {
     totalAverage: number,
     shopperCount: number,
   ) {
-    const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(
-      1,
-    );
+    const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(1);
     const shareOfClicks = (
       (chosenTimesAmount / totalClicksPerVariant) *
       100
@@ -559,19 +571,43 @@ export class InsightsService {
     );
   }
 
-  private async generateAiInsights(testId: string) {
+  private async generateAiInsights(
+    testId: string,
+    testObjective: TestObjective,
+  ) {
     const formattedData = await this.getInsightsData(testId);
+    const {
+      config: { provider, model },
+      messages,
+    } = await this.adalineService.getPromptDeployment(testObjective);
 
-    const unformattedInsights = await this.openAiService.createChatCompletion([
-      {
-        role: 'system',
-        content: GENERATE_INSIGHTS_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `Here is the test data to analyze:\n\n${formattedData}`,
-      },
-    ]);
+    if (provider !== 'openai') {
+      throw new BadRequestException(
+        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+      );
+    }
+
+    // Format messages for OpenAI
+    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+      // Concatenate all text blocks in content
+      const content = msg.content.map((block) => block.value).join('\n\n');
+
+      return {
+        role: msg.role,
+        content,
+      } as ChatCompletionMessageParam;
+    });
+
+    const unformattedInsights = await this.openAiService.createChatCompletion(
+      [
+        ...openAiMessages,
+        {
+          role: 'user',
+          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+        },
+      ],
+      { model },
+    );
 
     return insightsFormatter(unformattedInsights);
   }

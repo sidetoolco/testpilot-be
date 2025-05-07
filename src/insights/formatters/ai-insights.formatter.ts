@@ -1,6 +1,6 @@
 export function insightsFormatter(unformattedInsights: string) {
   const regex =
-    /## RESULTS OVERVIEW\s*([\s\S]*?)## PURCHASE DRIVERS \(BY VARIANT\)\s*([\s\S]*?)## COMPETITIVE INSIGHTS\s*([\s\S]*?)## RECOMMENDATIONS\s*([\s\S]*)/;
+    /RESULTS OVERVIEW\s*([\s\S]*?)PURCHASE DRIVERS \(BY VARIANT\)\s*([\s\S]*?)COMPETITIVE INSIGHTS\s*([\s\S]*?)RECOMMENDATIONS\s*([\s\S]*)/;
   const match = unformattedInsights.match(regex);
 
   if (!match) {

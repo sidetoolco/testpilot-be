@@ -10,6 +10,7 @@ import {
 import { Rpc, TableName } from 'lib/enums';
 import { GET_TEST_DATA_QUERY } from './constants';
 import {
+  Test,
   TestDemographics,
   TestSummary,
   TestTime,
@@ -20,7 +21,19 @@ import {
 export class TestsService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  public async getTestById(testId: string): Promise<TestData> {
+  public async getTestById(testId: string): Promise<Test> {
+    const test = await this.supabaseService.getById<Test>({
+      tableName: TableName.TESTS,
+      id: testId,
+      single: true,
+    });
+
+    if (!test) throw new NotFoundException('Test not found');
+
+    return test;
+  }
+
+  public async getRawDataByTestId(testId: string): Promise<TestData> {
     const unformattedTestData = await this.supabaseService.getById<RawTestData>(
       {
         tableName: TableName.TESTS,
