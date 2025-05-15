@@ -502,20 +502,10 @@ export class InsightsService {
   }
 
   private calculateTotalAverage(surveys: ResponseSurvey[]) {
-    // Calcular el promedio por encuesta
-    const individualAverages = surveys.map((survey) => {
-      const metrics = [
-        survey.appearance - 3,
-        survey.confidence - 3,
-        survey.value - 3,
-        survey.convenience - 3,
-        survey.brand - 3,
-      ];
-      return calculateAverageScore(metrics);
-    });
+    const individualValues = surveys.map((survey) => survey.value);
 
-    // Calcular el promedio total de todos los promedios individuales
-    const totalAverage = calculateAverageScore(individualAverages);
+    // Calcular el promedio total de todos los valores individuales
+    const totalAverage = calculateAverageScore(individualValues);
 
     return totalAverage;
   }
