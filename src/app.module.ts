@@ -9,6 +9,7 @@ import { ProlificModule } from './prolific/prolific.module';
 import { ProductsModule } from './products/products.module';
 import { OpenAiModule } from './open-ai/open-ai.module';
 import { AdalineModule } from './adaline/adaline.module';
+import { AmazonModule } from './amazon/amazon.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AdalineModule } from './adaline/adaline.module';
     ProductsModule,
     OpenAiModule,
     AdalineModule,
+    AmazonModule,
   ],
   controllers: [AppController],
   providers: [],
