@@ -14,7 +14,7 @@ export class AmazonController {
     @Query('term') searchTerm: string,
   ) {
     if (!searchTerm) {
-      return new BadRequestException('Missing searchTerm parameter');
+      throw new BadRequestException('Missing searchTerm parameter');
     }
 
     return this.amazonService.queryAmazonProducts(searchTerm);
