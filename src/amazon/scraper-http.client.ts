@@ -16,7 +16,7 @@ export class ScraperHttpClient extends BaseHttpClient {
       );
     }
 
-    super('https://api.scraperapi.com');
+    super('https://api.scraperapi.com', {}, true);
     this.apiKey = scraperApiKey;
   }
 

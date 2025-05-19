@@ -29,5 +29,15 @@ export const formatScraperResult = (results: Result[], searchTerm: string) => {
     return true;
   });
 
-  return uniqueResults;
+  return uniqueResults
+    .filter((product) => {
+      return (
+        typeof product === 'object' &&
+        product !== null &&
+        'title' in product &&
+        typeof product.title === 'string' &&
+        product.asin
+      );
+    })
+    .sort((a, b) => (b.reviews_count || 0) - (a.reviews_count || 0));
 };

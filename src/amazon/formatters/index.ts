@@ -1,1 +1,1 @@
-export * from './format-scraper-result.formatter';
+export * from './scraper-result.formatter';

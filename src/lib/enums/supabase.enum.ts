@@ -13,6 +13,8 @@ export enum TableName {
   PURCHASE_DRIVERS = 'purchase_drivers',
   COMPETITIVE_INSIGHTS = 'competitive_insights',
   TESTERS_SESSION = 'testers_session',
+  AMAZON_PRODUCTS = 'amazon_products',
+  PROFILES = 'profiles'
 }
 
 export enum Rpc {

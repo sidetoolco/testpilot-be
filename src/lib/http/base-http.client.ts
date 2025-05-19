@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import axiosRetry from 'axios-retry';
 
 @Injectable()
 export abstract class BaseHttpClient {
@@ -8,6 +9,7 @@ export abstract class BaseHttpClient {
   constructor(
     protected readonly baseUrl: string,
     protected readonly headers: Record<string, string> = {},
+    protected readonly enableRetry = false,
   ) {
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -17,6 +19,19 @@ export abstract class BaseHttpClient {
       },
       timeout: 10000,
     });
+
+    if (this.enableRetry) {
+      axiosRetry(this.client, {
+        retries: 4,
+        retryDelay: (retryCount) => 15000 * retryCount,
+        retryCondition: (error) => {
+          return (
+            axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+            error.code === 'ECONNABORTED'
+          );
+        },
+      });
+    }
   }
 
   public async get<T>(path: string, config?: AxiosRequestConfig): Promise<T> {
