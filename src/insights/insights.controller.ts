@@ -3,11 +3,11 @@ import { InsightsService } from './insights.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { GenerateStudyInsightsDto } from './dto';
 
-@UseGuards(JwtAuthGuard)
 @Controller('insights')
 export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get('/:testId')
   getInsightsDataFromTest(@Param('testId') testId: string) {
     return this.insightsService.getInsightsData(testId);
@@ -18,6 +18,7 @@ export class InsightsController {
     return this.insightsService.generateStudyInsights(dto.studyId);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('/:testId')
   generateAiInsights(@Param('testId') testId: string) {
     return this.insightsService.saveAiInsights(testId);
