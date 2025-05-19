@@ -9,6 +9,9 @@ import { ProlificModule } from './prolific/prolific.module';
 import { ProductsModule } from './products/products.module';
 import { OpenAiModule } from './open-ai/open-ai.module';
 import { AdalineModule } from './adaline/adaline.module';
+import { AmazonModule } from './amazon/amazon.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -21,6 +24,9 @@ import { AdalineModule } from './adaline/adaline.module';
     ProductsModule,
     OpenAiModule,
     AdalineModule,
+    AmazonModule,
+    CacheModule.register({ isGlobal: true, ttl: 86400 }),
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [],
