@@ -14,4 +14,18 @@ export interface ProlificStudy {
   reward: number;
   status: StudyStatus;
   internal_name: string;
+  access_details: Array<{
+    external_url: string;
+    total_allocation: number;
+  }>;
+  device_compatibility: string[];
+  peripheral_requirements: string[];
+  filters: Array<{
+    filter_id: string;
+    selected_values?: string[];
+    selected_range?: {
+      lower: number;
+      upper: number;
+    };
+  }>;
 }

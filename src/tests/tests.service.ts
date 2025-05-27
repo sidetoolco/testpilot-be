@@ -76,12 +76,19 @@ export class TestsService {
     status: string,
     testId: string,
     variation: string,
+    prolificTestId?: string,
   ) {
+    const updatePayload: Record<string, string> = {
+      prolific_status: status,
+    };
+
+    if (prolificTestId) {
+      updatePayload.prolific_test_id = prolificTestId;
+    }
+
     return await this.supabaseService.update<TestVariation>(
       TableName.TEST_VARIATIONS,
-      {
-        prolific_status: status,
-      },
+      updatePayload,
       [
         { key: 'test_id', value: testId },
         { key: 'variation_type', value: variation },

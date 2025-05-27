@@ -2,12 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ProlificHttpClient } from './prolific-http.client';
 import { ProlificStudy, ProlificStudySubmission } from './interfaces';
 import { StudyStatus } from './types';
+import { CreateTestDto, DemographicsDto } from 'tests/dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ProlificService {
   private readonly logger = new Logger(ProlificService.name);
 
-  constructor(private readonly httpClient: ProlificHttpClient) {}
+  constructor(
+    private readonly httpClient: ProlificHttpClient,
+    private readonly configService: ConfigService,
+  ) {}
 
   public async getStudy(studyId: string) {
     try {
@@ -33,8 +38,11 @@ export class ProlificService {
 
   public async getStudySubmissions(studyId: string, onlyInvalid = false) {
     try {
+      const url = new URL('/submissions/', this.httpClient['baseUrl']);
+      url.searchParams.append('study', studyId);
+      
       const { results } = await this.httpClient.get<ProlificStudySubmission>(
-        `/submissions/?study=${studyId}`,
+        url.pathname + url.search
       );
 
       return onlyInvalid
@@ -67,6 +75,144 @@ export class ProlificService {
     }
 
     return formattedStatus;
+  }
+
+  public async createStudy(
+    createTestDto: CreateTestDto,
+  ): Promise<ProlificStudy> {
+    try {
+      const filters = this.createProlificFilters(createTestDto.demographics);
+
+      const studyData = {
+        project: this.configService.get('PROLIFIC_PROJECT_ID'),
+        name: createTestDto.publicTitle,
+        internal_name: createTestDto.publicInternalName,
+        description:
+          'Welcome to your personalized shopping experience! This process is divided into two simple steps to understand your product preferences.\n\nStep 1: Choose from 12 products\nBrowse through our selection of products and choose the one you like the most. We want to know which ones you prefer.\n\nStep 2: Complete a short survey\nHelp us get to know you better by completing a brief survey.',
+        access_details: [
+          {
+            external_url: `https://testpilot-1.vercel.app/test/${createTestDto.publicInternalName}`,
+            total_allocation: createTestDto.targetNumberOfParticipants,
+          },
+        ],
+        prolific_id_option: 'url_parameters',
+        completion_codes: [
+          {
+            code: createTestDto.publicInternalName,
+            code_type: 'COMPLETED',
+            actions: [
+              {
+                action: 'AUTOMATICALLY_APPROVE',
+              },
+            ],
+          },
+          {
+            code: 'DEF234',
+            code_type: 'FOLLOW_UP_STUDY',
+            actions: [
+              {
+                action: 'AUTOMATICALLY_APPROVE',
+              },
+            ],
+          },
+        ],
+        total_available_places: createTestDto.targetNumberOfParticipants,
+        estimated_completion_time: createTestDto.participantTimeRequiredMinutes,
+        reward: createTestDto.incentiveAmount,
+        device_compatibility: ['desktop'],
+        peripheral_requirements: [],
+        filters,
+      };
+
+      return await this.httpClient.post<ProlificStudy>('/studies', studyData);
+    } catch (error) {
+      this.logger.error('Failed to create Prolific study:', error);
+      throw error;
+    }
+  }
+
+  private createProlificFilters(demographics: DemographicsDto) {
+    const filters = [];
+    const countryMap = {
+      CA: '45',
+      US: '1',
+    };
+
+    const genderMap = {
+      Male: '0',
+      Female: '1',
+    };
+
+    const interestMap = {
+      'Health & Fitness': {
+        filter_id: 'hobbies-categories',
+        selected_values: ['6'],
+      },
+      'Actively Religious': {
+        filter_id: 'participation-in-regular-religious-activities',
+        selected_values: ['0', '1', '2'],
+      },
+      'Environmentally Conscious': {
+        filter_id: 'concern-about-environmental-issues',
+        selected_values: ['1', '2', '3', '4'],
+      },
+      'College Graduate': {
+        filter_id: 'highest-education-level-completed',
+        selected_values: ['3'],
+      },
+      'Military Veteran': {
+        filter_id: 'military-veteran',
+        selected_values: ['0', '1', '2'],
+      },
+      'Lower Income': {
+        filter_id: 'personal-income-usd-us-participants-only',
+        selected_values: ['0', '1', '2', '3', '4', '5'],
+      },
+    };
+
+    // Add gender filter
+    if (genderMap[demographics.genders]) {
+      filters.push({
+        filter_id: 'sex',
+        selected_values: [genderMap[demographics.genders]],
+      });
+    }
+
+    // Add location filter
+    if (demographics.locations.length) {
+      const mappedLocations = demographics.locations
+        .map((code) => countryMap[code])
+        .filter(Boolean);
+
+      if (mappedLocations.length) {
+        filters.push({
+          filter_id: 'current-country-of-residence',
+          selected_values: mappedLocations,
+        });
+      }
+    }
+
+    // Add interests filter
+    if (demographics.interests.length) {
+      for (const interest of demographics.interests) {
+        const filterObject = interestMap[interest];
+
+        if (filterObject) {
+          filters.push(filterObject);
+        }
+      }
+    }
+
+    // Add age filter
+    const [lower, upper] = demographics.ageRanges;
+    if (lower !== undefined && upper !== undefined) {
+      filters.push({
+        filter_id: 'age',
+        selected_range: { lower: Number(lower), upper: Number(upper) },
+      });
+    }
+
+    return filters;
   }
 
   private formatStudyDemographics(unformattedDemographics: string) {
