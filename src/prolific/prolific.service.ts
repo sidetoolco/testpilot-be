@@ -38,8 +38,11 @@ export class ProlificService {
 
   public async getStudySubmissions(studyId: string, onlyInvalid = false) {
     try {
+      const url = new URL('/submissions/', this.httpClient['baseUrl']);
+      url.searchParams.append('study', studyId);
+      
       const { results } = await this.httpClient.get<ProlificStudySubmission>(
-        `/submissions/?study=${studyId}`,
+        url.pathname + url.search
       );
 
       return onlyInvalid

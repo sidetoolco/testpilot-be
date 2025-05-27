@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseHttpClient } from '../lib/http/base-http.client';
-import { AxiosRequestConfig } from 'axios';
 
 @Injectable()
 export class ScraperHttpClient extends BaseHttpClient {
@@ -16,21 +15,13 @@ export class ScraperHttpClient extends BaseHttpClient {
       );
     }
 
-    super('https://api.scraperapi.com', {}, true);
+    super('https://api.scraperapi.com/', {});
     this.apiKey = scraperApiKey;
   }
 
-  private addApiKeyToConfig(config?: AxiosRequestConfig): AxiosRequestConfig {
-    return {
-      ...config,
-      params: {
-        ...config?.params,
-        api_key: this.apiKey,
-      },
-    };
-  }
-
-  public async get<T>(path: string, config?: AxiosRequestConfig): Promise<T> {
-    return super.get<T>(path, this.addApiKeyToConfig(config));
+  public async get<T>(path: string, config?: RequestInit): Promise<T> {
+    const url = new URL(path, this.baseUrl);
+    url.searchParams.append('api_key', this.apiKey);
+    return super.get<T>(url.pathname + url.search, config);
   }
 }

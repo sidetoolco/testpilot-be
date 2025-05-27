@@ -48,30 +48,22 @@ export class AmazonService {
   }
 
   private queryProductsFromApi(searchTerm: string) {
-    return this.scraperHttpClient.get<ScraperResponse>(
-      '/structured/amazon/search',
-      {
-        params: {
-          query: searchTerm,
-          country: 'US',
-          tld: 'com',
-          page: '1',
-        },
-      },
-    );
+    const url = new URL('/structured/amazon/search', this.scraperHttpClient['baseUrl']);
+    url.searchParams.append('query', searchTerm);
+    url.searchParams.append('country', 'US');
+    url.searchParams.append('tld', 'com');
+    url.searchParams.append('page', '1');
+    
+    return this.scraperHttpClient.get<ScraperResponse>(url.pathname + url.search);
   }
 
   private getProductDetail(asin: string) {
-    return this.scraperHttpClient.get<ProductDetail>(
-      '/structured/amazon/product',
-      {
-        params: {
-          country: 'US',
-          tld: 'com',
-          asin,
-        },
-      },
-    );
+    const url = new URL('/structured/amazon/product', this.scraperHttpClient['baseUrl']);
+    url.searchParams.append('country', 'US');
+    url.searchParams.append('tld', 'com');
+    url.searchParams.append('asin', asin);
+    
+    return this.scraperHttpClient.get<ProductDetail>(url.pathname + url.search);
   }
 
   private async saveProductsInCompetitorTable(

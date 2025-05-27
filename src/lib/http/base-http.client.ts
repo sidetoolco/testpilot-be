@@ -1,76 +1,124 @@
 import { Injectable } from '@nestjs/common';
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import axiosRetry from 'axios-retry';
+
+interface RequestConfig extends RequestInit {
+  params?: Record<string, string>;
+}
 
 @Injectable()
 export abstract class BaseHttpClient {
-  protected readonly client: AxiosInstance;
+  protected readonly baseUrl: string;
+  protected readonly headers: Record<string, string>;
 
   constructor(
-    protected readonly baseUrl: string,
-    protected readonly headers: Record<string, string> = {},
-    protected readonly enableRetry = false,
+    baseUrl: string,
+    headers: Record<string, string> = {},
   ) {
-    this.client = axios.create({
-      baseURL: this.baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.headers,
-      },
-      timeout: 10000,
-    });
-
-    if (this.enableRetry) {
-      axiosRetry(this.client, {
-        retries: 4,
-        retryDelay: (retryCount) => 15000 * retryCount,
-        retryCondition: (error) => {
-          return (
-            axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-            error.code === 'ECONNABORTED'
-          );
-        },
-      });
-    }
+    this.baseUrl = baseUrl;
+    this.headers = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
   }
 
-  public async get<T>(path: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.get<T>(path, config);
-    return response.data;
+  private buildUrl(path: string, params?: Record<string, string>): string {
+    const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+    const url = new URL(cleanPath, this.baseUrl);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, value);
+      });
+    }
+    return url.toString();
+  }
+
+  public async get<T>(path: string, config?: RequestConfig): Promise<T> {
+    const url = this.buildUrl(path, config?.params);
+    const response = await fetch(url, {
+      ...config,
+      method: 'GET',
+      headers: { ...this.headers, ...config?.headers },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
   }
 
   public async post<T>(
     path: string,
     data?: any,
-    config?: AxiosRequestConfig,
+    config?: RequestConfig,
   ): Promise<T> {
-    const response = await this.client.post<T>(path, data, config);
-    return response.data;
+    const url = this.buildUrl(path, config?.params);
+    console.log({ url, path, data });
+    const response = await fetch(url, {
+      ...config,
+      method: 'POST',
+      headers: { ...this.headers, ...config?.headers },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
   }
 
   public async put<T>(
     path: string,
     data?: any,
-    config?: AxiosRequestConfig,
+    config?: RequestConfig,
   ): Promise<T> {
-    const response = await this.client.put<T>(path, data, config);
-    return response.data;
+    const url = this.buildUrl(path, config?.params);
+    const response = await fetch(url, {
+      ...config,
+      method: 'PUT',
+      headers: { ...this.headers, ...config?.headers },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
   }
 
   public async patch<T>(
     path: string,
     data?: any,
-    config?: AxiosRequestConfig,
+    config?: RequestConfig,
   ): Promise<T> {
-    const response = await this.client.patch<T>(path, data, config);
-    return response.data;
+    const url = this.buildUrl(path, config?.params);
+    const response = await fetch(url, {
+      ...config,
+      method: 'PATCH',
+      headers: { ...this.headers, ...config?.headers },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
   }
 
-  public async delete<T>(
-    path: string,
-    config?: AxiosRequestConfig,
-  ): Promise<T> {
-    const response = await this.client.delete<T>(path, config);
-    return response.data;
+  public async delete<T>(path: string, config?: RequestConfig): Promise<T> {
+    const url = this.buildUrl(path, config?.params);
+    const response = await fetch(url, {
+      ...config,
+      method: 'DELETE',
+      headers: { ...this.headers, ...config?.headers },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
   }
 }
