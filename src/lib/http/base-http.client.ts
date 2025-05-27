@@ -52,7 +52,6 @@ export abstract class BaseHttpClient {
     config?: RequestConfig,
   ): Promise<T> {
     const url = this.buildUrl(path, config?.params);
-    console.log({ url, path, data });
     const response = await fetch(url, {
       ...config,
       method: 'POST',
