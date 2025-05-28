@@ -40,9 +40,9 @@ export class ProlificService {
     try {
       const url = new URL('/submissions/', this.httpClient['baseUrl']);
       url.searchParams.append('study', studyId);
-      
+
       const { results } = await this.httpClient.get<ProlificStudySubmission>(
-        url.pathname + url.search
+        url.pathname + url.search,
       );
 
       return onlyInvalid
@@ -95,7 +95,9 @@ export class ProlificService {
             total_allocation: createTestDto.targetNumberOfParticipants,
           },
         ],
-        prolific_id_option: 'url_parameters',
+        prolific_id_option: createTestDto.customScreeningEnabled
+          ? 'question'
+          : 'url_parameters',
         completion_codes: [
           {
             code: createTestDto.publicInternalName,
@@ -115,6 +117,19 @@ export class ProlificService {
               },
             ],
           },
+          ...(createTestDto.customScreeningEnabled
+            ? [
+                {
+                  code: `${createTestDto.publicInternalName}-COMPLETION-CODE`,
+                  code_type: 'SCREENED_OUT',
+                  actions: [
+                    {
+                      action: 'MANUALLY_REVIEW',
+                    },
+                  ],
+                },
+              ]
+            : []),
         ],
         total_available_places: createTestDto.targetNumberOfParticipants,
         estimated_completion_time: createTestDto.participantTimeRequiredMinutes,
@@ -122,6 +137,7 @@ export class ProlificService {
         device_compatibility: ['desktop'],
         peripheral_requirements: [],
         filters,
+        is_custom_screening: createTestDto.customScreeningEnabled,
       };
 
       return await this.httpClient.post<ProlificStudy>('/studies', studyData);
