@@ -6,6 +6,7 @@ import {
   IsArray,
   ValidateNested,
   IsUUID,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -80,4 +81,8 @@ export class CreateTestDto {
   @IsNotEmpty()
   @IsString()
   variationType: string;
+
+  @IsNotEmpty()
+  @IsBoolean()
+  customScreeningEnabled: boolean;
 }
