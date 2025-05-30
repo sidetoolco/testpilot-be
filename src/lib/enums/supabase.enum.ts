@@ -14,7 +14,8 @@ export enum TableName {
   COMPETITIVE_INSIGHTS = 'competitive_insights',
   TESTERS_SESSION = 'testers_session',
   AMAZON_PRODUCTS = 'amazon_products',
-  PROFILES = 'profiles'
+  PROFILES = 'profiles',
+  EVENTS = 'events',
 }
 
 export enum Rpc {
