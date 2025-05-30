@@ -147,6 +147,12 @@ export class ProlificService {
     }
   }
 
+  public async screenOutSubmission(submissionId: string) {
+    await this.httpClient.post(`/submissions/${submissionId}/transition`, {
+      action: 'SCREENED OUT',
+    });
+  }
+
   private createProlificFilters(demographics: DemographicsDto) {
     const filters = [];
     const countryMap = {
