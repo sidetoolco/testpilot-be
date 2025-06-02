@@ -27,7 +27,7 @@ export class ProlificController {
       );
     }
 
-    await this.prolificService.screenOutSubmission(submission.id);
+    await this.prolificService.screenOutSubmission(studyId, submission.id);
 
     return HttpStatus.OK;
   }

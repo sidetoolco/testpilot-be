@@ -120,7 +120,7 @@ export class ProlificService {
           ...(createTestDto.customScreeningEnabled
             ? [
                 {
-                  code: `${createTestDto.publicInternalName}-COMPLETION-CODE`,
+                  code: 'SCREENED-OUT',
                   code_type: 'SCREENED_OUT',
                   actions: [
                     {
@@ -147,9 +147,10 @@ export class ProlificService {
     }
   }
 
-  public async screenOutSubmission(submissionId: string) {
-    await this.httpClient.post(`/submissions/${submissionId}/transition`, {
-      action: 'SCREENED OUT',
+  public async screenOutSubmission(studyId: string, submissionId: string) {
+    await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
+      submission_ids: [submissionId],
+      increase_places: true,
     });
   }
 
