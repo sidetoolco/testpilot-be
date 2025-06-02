@@ -91,7 +91,7 @@ export class ProlificService {
           'Welcome to your personalized shopping experience! This process is divided into two simple steps to understand your product preferences.\n\nStep 1: Choose from 12 products\nBrowse through our selection of products and choose the one you like the most. We want to know which ones you prefer.\n\nStep 2: Complete a short survey\nHelp us get to know you better by completing a brief survey.',
         access_details: [
           {
-            external_url: `https://testpilot-1.vercel.app/test/${createTestDto.publicInternalName}`,
+            external_url: `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
             total_allocation: createTestDto.targetNumberOfParticipants,
           },
         ],
