@@ -8,6 +8,7 @@ import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
 import {
   AiInsight,
+  Event,
   ResponseSurvey,
   TestVariation,
 } from 'lib/interfaces/entities.interface';
@@ -136,17 +137,10 @@ export class InsightsService {
         );
       }
 
-      const [chosenTimes, surveys, totalClicksPerVariant] = await Promise.all([
-        this.testsService.getTestTimesByProductId(variantChoosen.product_id),
-        this.productsService.getProductSurveys(
-          variantChoosen.product_id,
-          testId,
-        ),
-        this.testsService.getTestTimesByTestVariation(
-          testId,
-          variantChoosen.variation_type,
-        ),
-      ]);
+      const surveys = await this.productsService.getProductSurveys(
+        variantChoosen.product_id,
+        testId,
+      );
 
       const totalAverage = this.calculateTotalAverage(surveys);
       const summary = this.generateVariantSummary(
@@ -155,8 +149,7 @@ export class InsightsService {
         testId,
         variantChoosen.variation_type,
         surveys.length,
-        totalClicksPerVariant.length,
-        chosenTimes.length,
+        await this.calculateShareOfClicks(testId, variantChoosen.product_id),
         totalAverage,
         shopperCount,
       );
@@ -342,10 +335,6 @@ export class InsightsService {
     return count > 0 ? Number((sum / count).toFixed(1)) : 0;
   }
 
-  private calculateShareOfBuy(count: number, total: number): number {
-    return Number(((count / total) * 100).toFixed(1));
-  }
-
   async purchaseDrivers(testId: string, variant: string) {
     try {
       const [test, variation] = await Promise.all([
@@ -516,16 +505,11 @@ export class InsightsService {
     testId: string,
     variant: string,
     surveysAmount: number,
-    totalClicksPerVariant: number,
-    chosenTimesAmount: number,
+    shareOfClicks: number,
     totalAverage: number,
     shopperCount: number,
   ) {
     const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(1);
-    const shareOfClicks = (
-      (chosenTimesAmount / totalClicksPerVariant) *
-      100
-    ).toFixed(1);
 
     return {
       name: testName,
@@ -534,7 +518,7 @@ export class InsightsService {
       variant,
       valuescore: Number(totalAverage.toFixed(1)),
       shareOfBuy: Number(shareOfBuy),
-      shareOfClicks: Number(shareOfClicks),
+      shareOfClicks: Number(shareOfClicks.toFixed(1)),
     };
   }
 
@@ -600,5 +584,22 @@ export class InsightsService {
     );
 
     return insightsFormatter(unformattedInsights);
+  }
+
+  private async calculateShareOfClicks(
+    testId: string,
+    variantProductId: string,
+  ) {
+    const allClicksFromTest = await this.supabaseService.findMany<Event>(
+      TableName.EVENTS,
+      { 'metadata->>test_id': testId },
+    );
+
+    const totalClicks = allClicksFromTest.length;
+    const variantClicks = allClicksFromTest.filter(
+      (click) => click.metadata['product_id'] === variantProductId,
+    ).length;
+
+    return totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0;
   }
 }

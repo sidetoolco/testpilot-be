@@ -106,3 +106,11 @@ export interface Test {
   name: string;
   objective: TestObjective;
 }
+
+export interface Event {
+  id: string;
+  created_at: string;
+  type: 'click';
+  metadata: object;
+  path: string;
+}

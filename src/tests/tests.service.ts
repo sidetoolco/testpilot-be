@@ -106,15 +106,6 @@ export class TestsService {
     });
   }
 
-  public getTestTimesByProductId(productId: string) {
-    return this.supabaseService.getByCondition<TestTime[]>({
-      tableName: TableName.TEST_TIMES,
-      condition: 'product_id',
-      value: productId,
-      single: false,
-    });
-  }
-
   public getTestTimesByTestVariation(testId: string, variationType: string) {
     return this.supabaseService.getByCondition<TestTime[]>({
       tableName: TableName.TEST_TIMES,
