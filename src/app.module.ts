@@ -12,6 +12,7 @@ import { AdalineModule } from './adaline/adaline.module';
 import { AmazonModule } from './amazon/amazon.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { UsersModule } from './users/users.module';
+import { ScreeningModule } from './screening/screening.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { UsersModule } from './users/users.module';
     AmazonModule,
     CacheModule.register({ isGlobal: true, ttl: 86400 }),
     UsersModule,
+    ScreeningModule,
   ],
   controllers: [AppController],
   providers: [],
