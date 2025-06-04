@@ -1,8 +1,10 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { OpenAiService } from 'open-ai/open-ai.service';
 
 @Injectable()
 export class ScreeningService {
+  private readonly logger = new Logger(ScreeningService.name);
+
   constructor(private readonly openAiService: OpenAiService) {}
 
   async validateScreeningQuestion(question: string) {
@@ -61,6 +63,8 @@ export class ScreeningService {
     try {
       return JSON.parse(response);
     } catch (err) {
+      this.logger.error(`Failed to parse response ${response} with error ${err}`);
+      this.logger
       throw new InternalServerErrorException(
         'Failed to parse response from language model. Please try again or contact support.',
       );
