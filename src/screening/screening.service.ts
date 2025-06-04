@@ -37,18 +37,21 @@ export class ScreeningService {
     }
 
     const prompt = `
-        Analyze the following yes/no demographic screening question and determine if it is likely to exclude more than 90% of the U.S. population (i.e., if fewer than 10% would answer “yes”).
+        You are a JSON-only response system. You must ONLY return valid JSON in the exact format specified below, with no additional text, explanations, or markdown formatting.
+
+        Analyze the following yes/no demographic screening question and determine if it is likely to exclude more than 90% of the U.S. population (i.e., if fewer than 10% would answer "yes").
         Your goal is to determine if the question is valid for general recruitment.
-        If fewer than 10% of the U.S. population would likely answer “yes,” return:
-            {
-                "isValid": false,
-                "error": "This question is too restrictive."
-            }
-        If 10% or more of the U.S. population would likely answer “yes,” return:
-            {
-                "isValid": true
-            }
-        Question: “${question}”
+
+        RESPONSE FORMAT:
+        If fewer than 10% of the U.S. population would likely answer "yes," you must return EXACTLY:
+        {"isValid": false, "error": "This question is too restrictive."}
+
+        If 10% or more of the U.S. population would likely answer "yes," you must return EXACTLY:
+        {"isValid": true}
+
+        DO NOT include any other text, explanations, or formatting. Return ONLY the JSON object.
+
+        Question: "${question}"
     `;
 
     const response = await this.openAiService.createChatCompletion([
