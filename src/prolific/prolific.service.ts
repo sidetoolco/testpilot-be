@@ -97,9 +97,7 @@ export class ProlificService {
             total_allocation: createTestDto.targetNumberOfParticipants,
           },
         ],
-        prolific_id_option: createTestDto.customScreeningEnabled
-          ? 'question'
-          : 'url_parameters',
+        prolific_id_option: 'url_parameters',
         completion_codes: [
           {
             code: createTestDto.publicInternalName,
