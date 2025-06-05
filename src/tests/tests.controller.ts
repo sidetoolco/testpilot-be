@@ -36,7 +36,6 @@ export class TestsController {
     await this.testMonitoringService.scheduleTestCompletionCheck(
       prolificStudy.id,
       dto.testId,
-      dto.variationType,
     );
 
     // Return the completion URL

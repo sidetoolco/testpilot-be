@@ -13,7 +13,6 @@ export class TestMonitoringService {
   async scheduleTestCompletionCheck(
     studyId: string,
     testId: string,
-    variationType: string,
   ) {
     try {
       // Schedule the job to run after 72 hours
@@ -22,7 +21,6 @@ export class TestMonitoringService {
         {
           studyId,
           testId,
-          variationType,
         },
         {
           delay: 72 * 60 * 60 * 1000, // 72 hours to milliseconds
