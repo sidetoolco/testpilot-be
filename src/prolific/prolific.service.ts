@@ -148,11 +148,16 @@ export class ProlificService {
   }
 
   public async screenOutSubmission(studyId: string, submissionId: string) {
-    await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
-      submission_ids: [submissionId],
-      increase_places: true,
-      bonus_per_submission: 0.14
-    });
+    try {
+      await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
+        submission_ids: [submissionId],
+        increase_places: true,
+        bonus_per_submission: 0.14
+      });
+    } catch(error) {
+      this.logger.error(`Failed to screen out submission ${submissionId} for study ${studyId}: ${error}`);
+      throw error;
+    }
   }
 
   private createProlificFilters(demographics: DemographicsDto) {
