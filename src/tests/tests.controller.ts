@@ -3,6 +3,7 @@ import { TestsService } from './tests.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { CreateTestDto } from './dto';
 import { ProlificService } from 'prolific/prolific.service';
+import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('tests')
@@ -10,6 +11,7 @@ export class TestsController {
   constructor(
     private readonly testsService: TestsService,
     private readonly prolificService: ProlificService,
+    private readonly testMonitoringService: TestMonitoringService,
   ) {}
 
   @Get('/:id')
@@ -18,7 +20,7 @@ export class TestsController {
   }
 
   @Post()
-  async createTest(@Body() dto: CreateTestDto) {
+  async publishTest(@Body() dto: CreateTestDto) {
     // Create the study in Prolific
     const prolificStudy = await this.prolificService.createStudy(dto);
 
@@ -28,6 +30,13 @@ export class TestsController {
       dto.testId,
       dto.variationType,
       prolificStudy.id,
+    );
+
+    // Schedule the completion check
+    await this.testMonitoringService.scheduleTestCompletionCheck(
+      prolificStudy.id,
+      dto.testId,
+      dto.variationType,
     );
 
     // Return the completion URL
