@@ -151,6 +151,7 @@ export class ProlificService {
     await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
       submission_ids: [submissionId],
       increase_places: true,
+      bonus_per_submission: 0.14
     });
   }
 
