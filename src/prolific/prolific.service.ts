@@ -117,6 +117,16 @@ export class ProlificService {
               },
             ],
           },
+          {
+            code: 'SPEEDER',
+            code_type: 'OTHER',
+            actions: [
+              {
+                action: 'REQUEST_RETURN',
+                return_reason: "Study completed too quickly (less than 2 minutes)."
+              },
+            ],
+          },
           ...(createTestDto.customScreeningEnabled
             ? [
                 {
