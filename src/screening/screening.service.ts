@@ -1,11 +1,21 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { AdalineService } from 'adaline/adaline.service';
 import { OpenAiService } from 'open-ai/open-ai.service';
+import { ChatCompletionMessageParam } from 'openai/resources/chat';
+import { TestObjective } from 'tests/enums';
 
 @Injectable()
 export class ScreeningService {
   private readonly logger = new Logger(ScreeningService.name);
 
-  constructor(private readonly openAiService: OpenAiService) {}
+  constructor(
+    private readonly openAiService: OpenAiService,
+    private readonly adalineService: AdalineService,
+  ) {}
 
   async validateScreeningQuestion(question: string) {
     // First check: Ensure the input is a question and is a yes/no question
@@ -36,38 +46,49 @@ export class ScreeningService {
       };
     }
 
-    const prompt = `
-        You are a JSON-only response system. You must ONLY return valid JSON in the exact format specified below, with no additional text, explanations, or markdown formatting.
+    const { messages, config } = await this.adalineService.getPromptDeployment(
+      null,
+      '916af1ba-a49b-41d3-b172-f4d3588bca72',
+    );
 
-        Analyze the following yes/no demographic screening question and determine if it is likely to exclude more than 90% of the U.S. population (i.e., if fewer than 10% would answer "yes").
-        Your goal is to determine if the question is valid for general recruitment.
+    const updatedMessages = messages.map((message) => {
+      if (message.role === 'user') {
+        return {
+          ...message,
+          content: message.content.map((content) => {
+            if (content.modality === 'text') {
+              return {
+                ...content,
+                value: content.value.replace('{question}', question),
+              };
+            }
+            return content;
+          }),
+        };
+      }
+      return message;
+    });
 
-        RESPONSE FORMAT:
-        If fewer than 10% of the U.S. population would likely answer "yes," you must return EXACTLY:
-        {"isValid": false, "error": "This question is too restrictive."}
+    // Transform messages to OpenAI format
+    const openAiMessages: ChatCompletionMessageParam[] = updatedMessages.map(
+      (message) => ({
+        role: message.role as 'system' | 'user' | 'assistant',
+        content: message.content.map((content) => content.value).join('\n\n'),
+      }),
+    );
 
-        If 10% or more of the U.S. population would likely answer "yes," you must return EXACTLY:
-        {"isValid": true}
-
-        DO NOT include any other text, explanations, or formatting. Return ONLY the JSON object.
-
-        Question: "${question}"
-    `;
-
-    const response = await this.openAiService.createChatCompletion([
-      {
-        role: 'system',
-        content:
-          'You are an expert in user research and participant screening. Your task is to analyze screening questions and determine if they might be too restrictive.',
-      },
-      { role: 'user', content: prompt },
-    ]);
+    const response = await this.openAiService.createChatCompletion(
+      openAiMessages,
+      { model: config.model },
+    );
 
     try {
       return JSON.parse(response);
     } catch (err) {
-      this.logger.error(`Failed to parse response ${response} with error ${err}`);
-      this.logger
+      this.logger.error(
+        `Failed to parse response ${response} with error ${err}`,
+      );
+      this.logger;
       throw new InternalServerErrorException(
         'Failed to parse response from language model. Please try again or contact support.',
       );
