@@ -97,9 +97,7 @@ export class ProlificService {
             total_allocation: createTestDto.targetNumberOfParticipants,
           },
         ],
-        prolific_id_option: createTestDto.customScreeningEnabled
-          ? 'question'
-          : 'url_parameters',
+        prolific_id_option: 'url_parameters',
         completion_codes: [
           {
             code: createTestDto.publicInternalName,
@@ -116,6 +114,16 @@ export class ProlificService {
             actions: [
               {
                 action: 'AUTOMATICALLY_APPROVE',
+              },
+            ],
+          },
+          {
+            code: 'SPEEDER',
+            code_type: 'OTHER',
+            actions: [
+              {
+                action: 'REQUEST_RETURN',
+                return_reason: "Study completed too quickly (less than 2 minutes)."
               },
             ],
           },
@@ -150,10 +158,16 @@ export class ProlificService {
   }
 
   public async screenOutSubmission(studyId: string, submissionId: string) {
-    await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
-      submission_ids: [submissionId],
-      increase_places: true,
-    });
+    try {
+      await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
+        submission_ids: [submissionId],
+        increase_places: true,
+        bonus_per_submission: 0.14
+      });
+    } catch(error) {
+      this.logger.error(`Failed to screen out submission ${submissionId} for study ${studyId}: ${error}`);
+      throw error;
+    }
   }
 
   private createProlificFilters(demographics: DemographicsDto) {

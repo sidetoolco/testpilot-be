@@ -7,9 +7,15 @@ import { TestObjective } from 'tests/enums';
 export class AdalineService {
   constructor(private readonly client: AdalineHttpClient) {}
 
-  public async getPromptDeployment(testObjective: TestObjective) {
+  public async getPromptDeployment(
+    testObjective?: TestObjective,
+    promptId?: string,
+  ) {
     try {
-      const promptId = this.getPromptIdFromTestObjective(testObjective);
+      if (!promptId) {
+        promptId = this.getPromptIdFromTestObjective(testObjective);
+      }
+      
       return await this.client.get<PromptDeployment>(
         `/deployments/${promptId}/current`,
       );
