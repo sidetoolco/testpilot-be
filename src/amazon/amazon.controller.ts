@@ -13,7 +13,7 @@ import {
 import { AmazonService } from './amazon.service';
 import { CacheInterceptor } from '@nestjs/cache-manager';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
-import { SaveAmazonProductsDto } from './dto';
+import { SaveAmazonProductsDto} from './dto';
 import { CurrentUser } from 'auth/decorators';
 import { UsersService } from 'users/users.service';
 
@@ -26,6 +26,13 @@ export class AmazonController {
   ) {}
 
   @UseInterceptors(CacheInterceptor)
+  @Get('products/:asin')
+  async getProductDetail(@Param('asin') asin: string) {
+
+    return this.amazonService.getProductDetail(asin);
+  }
+
+  @UseInterceptors(CacheInterceptor)
   @Get('products')
   async getAmazonProducts(@Query('term') searchTerm: string) {
     if (!searchTerm) {
@@ -33,6 +40,20 @@ export class AmazonController {
     }
 
     return this.amazonService.queryAmazonProducts(searchTerm);
+  }
+
+  @Post('products')
+  async saveAmazonProductPreview(
+    @Body() { products }: SaveAmazonProductsDto,
+    @CurrentUser('id') userId: any,
+  ) {
+    const userCompanyId = await this.usersService.getUserCompanyId(userId);
+
+    if (!userCompanyId) {
+      throw new BadRequestException('Missing company ID');
+    }
+
+    return this.amazonService.saveAmazonProductPreview(products, userCompanyId);
   }
 
   @Post('products/:testId')
