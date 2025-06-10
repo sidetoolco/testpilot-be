@@ -27,8 +27,9 @@ export class DemographicsDto {
   ageRanges: string[];
 
   @IsNotEmpty()
-  @IsString()
-  genders: string;
+  @IsArray()
+  @IsString({ each: true })
+  genders: string[];
 
   @IsNotEmpty()
   @IsArray()
