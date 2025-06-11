@@ -47,6 +47,46 @@ export class AmazonService {
     return await this.saveProductsInCompetitorTable(testId, savedProducts);
   }
 
+  public async saveAmazonProductPreview(
+    products: AmazonProduct[],
+    companyId: string,
+  ) {
+    let savedProducts = [];
+
+    for (const product of products) {
+      const existingProduct = await this.supabaseService.findMany<AmazonProduct>(
+        TableName.AMAZON_PRODUCTS,
+        {
+          asin: product.asin,
+          company_id: companyId,
+        },
+      );
+
+      if (existingProduct && existingProduct.length > 0) {
+        savedProducts = [...savedProducts, ...existingProduct];
+        continue;
+      }
+
+      const { feature_bullets, images } = await this.getProductDetail(
+        product.asin,
+      );
+
+      const savedProduct = await this.supabaseService.insert<AmazonProduct>(
+        TableName.AMAZON_PRODUCTS,
+        {
+          ...product,
+          bullet_points: feature_bullets,
+          images,
+          company_id: companyId,
+        },
+      );
+
+      savedProducts = [...savedProducts, ...savedProduct];
+    }
+
+    return savedProducts;
+  }
+
   private queryProductsFromApi(searchTerm: string) {
     const url = new URL('/structured/amazon/search', this.scraperHttpClient['baseUrl']);
     url.searchParams.append('query', searchTerm);
@@ -57,7 +97,7 @@ export class AmazonService {
     return this.scraperHttpClient.get<ScraperResponse>(url.pathname + url.search);
   }
 
-  private getProductDetail(asin: string) {
+  public getProductDetail(asin: string) {
     const url = new URL('/structured/amazon/product', this.scraperHttpClient['baseUrl']);
     url.searchParams.append('country', 'US');
     url.searchParams.append('tld', 'com');
