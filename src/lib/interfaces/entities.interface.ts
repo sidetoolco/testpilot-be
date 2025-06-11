@@ -114,3 +114,11 @@ export interface Event {
   metadata: object;
   path: string;
 }
+
+export interface Invite {
+  id: string;
+  email: string;
+  company_id: string;
+  token: string;
+  expires_at: string;
+}

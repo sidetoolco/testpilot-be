@@ -16,6 +16,7 @@ import { ScreeningModule } from './screening/screening.module';
 import { TestMonitoringModule } from './test-monitoring/test-monitoring.module';
 import { BullModule } from '@nestjs/bullmq';
 import { EmailModule } from './email/email.module';
+import { CompaniesModule } from './companies/companies.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { EmailModule } from './email/email.module';
     ScreeningModule,
     TestMonitoringModule,
     EmailModule,
+    CompaniesModule,
   ],
   controllers: [AppController],
   providers: [],
