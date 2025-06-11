@@ -42,36 +42,26 @@ export class AmazonController {
     return this.amazonService.queryAmazonProducts(searchTerm);
   }
 
-  @Post('products')
-  async saveAmazonProductPreview(
+  @Post('products/:testId?')
+  async saveAmazonProducts(
     @Body() { products }: SaveAmazonProductsDto,
-    @CurrentUser('id') userId: any,
+    @Param('testId') testId?: string,
+    @CurrentUser('id') userId?: any,
   ) {
     const userCompanyId = await this.usersService.getUserCompanyId(userId);
 
     if (!userCompanyId) {
       throw new BadRequestException('Missing company ID');
+    }
+
+    if (testId) {
+      return this.amazonService.saveAmazonProducts(
+        products,
+        testId,
+        userCompanyId,
+      );
     }
 
     return this.amazonService.saveAmazonProductPreview(products, userCompanyId);
-  }
-
-  @Post('products/:testId')
-  async saveAmazonProducts(
-    @Body() { products }: SaveAmazonProductsDto,
-    @Param('testId') testId: string,
-    @CurrentUser('id') userId: any,
-  ) {
-    const userCompanyId = await this.usersService.getUserCompanyId(userId);
-
-    if (!userCompanyId) {
-      throw new BadRequestException('Missing company ID');
-    }
-
-    return this.amazonService.saveAmazonProducts(
-      products,
-      testId,
-      userCompanyId,
-    );
   }
 }
