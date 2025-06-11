@@ -58,7 +58,6 @@ export class CompaniesService {
 
       return token;
     } catch (error) {
-      console.log({ error });
       if (error.code === '23505') {
         throw new ConflictException(
           'An invitation for this email already exists',
