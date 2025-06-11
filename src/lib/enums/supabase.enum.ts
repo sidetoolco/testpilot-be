@@ -16,6 +16,7 @@ export enum TableName {
   AMAZON_PRODUCTS = 'amazon_products',
   PROFILES = 'profiles',
   EVENTS = 'events',
+  COMPANY_INVITES = 'invites',
 }
 
 export enum Rpc {

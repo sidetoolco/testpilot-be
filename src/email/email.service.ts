@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
@@ -17,7 +21,7 @@ export class EmailService {
     this.resend = new Resend(apiKey);
   }
 
-  async sendTestCompletionReminder(studyId: string, testId: string) {
+  public async sendTestCompletionReminder(studyId: string, testId: string) {
     try {
       await this.resend.emails.send({
         from: 'TestPilot <notifications@testpilotcpg.com>',
@@ -38,6 +42,31 @@ export class EmailService {
         error,
       );
       throw error;
+    }
+  }
+
+  public async sendCompanyInvitation(inviteeEmail: string, token: string) {
+    try {
+      await this.resend.emails.send({
+        from: 'invites@testpilotcpg.com',
+        to: inviteeEmail,
+        subject: `You've been invited to TestPilot!`,
+        html: `
+          <h1>You've Been Invited to TestPilot!</h1>
+          
+          <p>Click the link below to accept the invitation:</p>
+          <a href="${this.configService.get('FE_URL')}/accept-invite?token=${token}">Accept Invitation</a>
+          
+          <p>This invitation link will expire in 7 days.</p>
+          
+          <p>If you did not expect this invitation, please disregard this email.</p>
+        `,
+      });
+    } catch (error) {
+      const errorMsg = `Failed to send company invitation to email ${inviteeEmail}`;
+      this.logger.error(`${errorMsg}:`, error);
+
+      throw new InternalServerErrorException(errorMsg);
     }
   }
 }
