@@ -55,7 +55,7 @@ export class EmailService {
           <h1>You've Been Invited to TestPilot!</h1>
           
           <p>Click the link below to accept the invitation:</p>
-          <a href="${this.configService.get('FE_URL')}/accept-invite?token=${token}">Accept Invitation</a>
+          <a href="${this.configService.get('FE_URL')}/invite/${token}">Accept Invitation</a>
           
           <p>This invitation link will expire in 7 days.</p>
           
