@@ -210,11 +210,17 @@ export class ProlificService {
     };
 
     // Add gender filter
-    if (genderMap[demographics.genders]) {
-      filters.push({
-        filter_id: 'sex',
-        selected_values: [genderMap[demographics.genders]],
-      });
+    if (demographics.genders?.length) {
+      const mappedGenders = demographics.genders
+        .map((gender) => genderMap[gender])
+        .filter(Boolean);
+
+      if (mappedGenders.length) {
+        filters.push({
+          filter_id: 'sex',
+          selected_values: mappedGenders,
+        });
+      }
     }
 
     // Add location filter
