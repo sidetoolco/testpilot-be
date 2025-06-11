@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   HttpStatus,
   Injectable,
   InternalServerErrorException,
@@ -17,6 +18,17 @@ export class CompaniesService {
   ) {}
 
   public async inviteTeamMember(companyId: string, teamMemberEmail: string) {
+    // Check if profile already exists
+    const existingProfile = await this.supabaseService.getByCondition({
+      tableName: TableName.PROFILES,
+      condition: 'email',
+      value: teamMemberEmail,
+      single: true,
+    });
+
+    if (existingProfile) {
+      throw new ConflictException('A user with this email already exists');
+    }
     const invitationToken = await this.createInvitation(
       companyId,
       teamMemberEmail,
@@ -46,6 +58,12 @@ export class CompaniesService {
 
       return token;
     } catch (error) {
+      console.log({ error });
+      if (error.code === '23505') {
+        throw new ConflictException(
+          'An invitation for this email already exists',
+        );
+      }
       throw new InternalServerErrorException('Failed to create invitation');
     }
   }
