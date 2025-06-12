@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TestsService } from './tests.service';
 import { SupabaseModule } from 'supabase/supabase.module';
 import { TestsController } from './tests.controller';
@@ -7,7 +7,7 @@ import { TestMonitoringModule } from 'test-monitoring/test-monitoring.module';
 
 @Module({
   providers: [TestsService],
-  imports: [SupabaseModule, ProlificModule, TestMonitoringModule],
+  imports: [SupabaseModule, forwardRef(() => ProlificModule), TestMonitoringModule],
   controllers: [TestsController],
   exports: [TestsService],
 })

@@ -1,9 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { ProlificHttpClient } from './prolific-http.client';
 import { ProlificStudy, ProlificStudySubmission } from './interfaces';
 import { StudyStatus } from './types';
 import { CreateTestDto, DemographicsDto } from 'tests/dto';
 import { ConfigService } from '@nestjs/config';
+import { TestStatus } from 'tests/types/test-status.type';
+import { TestsService } from 'tests/tests.service';
 
 @Injectable()
 export class ProlificService {
@@ -12,6 +14,8 @@ export class ProlificService {
   constructor(
     private readonly httpClient: ProlificHttpClient,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => TestsService))
+    private readonly testsService: TestsService,
   ) {}
 
   public async getStudy(studyId: string) {
@@ -55,7 +59,7 @@ export class ProlificService {
   }
 
   public formatStatus(status: StudyStatus) {
-    let formattedStatus: string;
+    let formattedStatus: TestStatus;
 
     switch (status) {
       case 'UNPUBLISHED':
@@ -123,7 +127,8 @@ export class ProlificService {
             actions: [
               {
                 action: 'REQUEST_RETURN',
-                return_reason: "Study completed too quickly (less than 2 minutes)."
+                return_reason:
+                  'Study completed too quickly (less than 2 minutes).',
               },
             ],
           },
@@ -159,15 +164,26 @@ export class ProlificService {
 
   public async screenOutSubmission(studyId: string, submissionId: string) {
     try {
-      await this.httpClient.post(`/studies/${studyId}/screen-out-submissions/`, {
-        submission_ids: [submissionId],
-        increase_places: true,
-        bonus_per_submission: 0.14
-      });
-    } catch(error) {
-      this.logger.error(`Failed to screen out submission ${submissionId} for study ${studyId}: ${error}`);
+      await this.httpClient.post(
+        `/studies/${studyId}/screen-out-submissions/`,
+        {
+          submission_ids: [submissionId],
+          increase_places: true,
+          bonus_per_submission: 0.14,
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to screen out submission ${submissionId} for study ${studyId}: ${error}`,
+      );
       throw error;
     }
+  }
+
+  public async markStudyAsActive(studyId: string) {
+    const testId = await this.testsService.getTestIdByProlificStudyId(studyId);
+
+    await this.testsService.updateTestStatus(testId, 'active');
   }
 
   private createProlificFilters(demographics: DemographicsDto) {
