@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ProlificService } from './prolific.service';
 import { ScreenOutSubmissionDto } from './dto';
+import { StudyStatus } from './types';
 
 @Controller('prolific')
 export class ProlificController {
@@ -19,7 +20,9 @@ export class ProlificController {
   async screenOutSubmission(
     @Body() { studyId, participantId }: ScreenOutSubmissionDto,
   ) {
-    this.logger.log(`Screening out participant's ${participantId} submission for study ${studyId}`)
+    this.logger.log(
+      `Screening out participant's ${participantId} submission for study ${studyId}`,
+    );
 
     const submissions = await this.prolificService.getStudySubmissions(studyId);
     const submission = submissions.find(
@@ -33,8 +36,20 @@ export class ProlificController {
     }
 
     await this.prolificService.screenOutSubmission(studyId, submission.id);
-    
+
     this.logger.log(`Participant ${participantId} screened out successfully`);
+    return HttpStatus.OK;
+  }
+
+  @Post('/study/status')
+  async changeStudyStatus(
+    @Body('status') status: StudyStatus,
+    @Body('resource_id') studyId: string,
+  ) {
+    if (status === 'ACTIVE') {
+      await this.prolificService.markStudyAsActive(studyId);
+    }
+
     return HttpStatus.OK;
   }
 }

@@ -1,4 +1,5 @@
 import { TestObjective } from 'tests/enums';
+import { TestStatus } from 'tests/types/test-status.type';
 
 export interface TestDemographics {
   id: string;
@@ -105,6 +106,7 @@ export interface Test {
   id: string;
   name: string;
   objective: TestObjective;
+  status: TestStatus;
 }
 
 export interface Event {

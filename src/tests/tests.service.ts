@@ -16,6 +16,7 @@ import {
   TestTime,
   TestVariation,
 } from 'lib/interfaces/entities.interface';
+import { TestStatus } from './types/test-status.type';
 
 @Injectable()
 export class TestsService {
@@ -126,6 +127,31 @@ export class TestsService {
     return this.supabaseService.delete(TableName.TESTERS_SESSION, {
       prolific_pid: prolificIds,
     });
+  }
+
+  public async getTestIdByProlificStudyId(prolificStudyId: string) {
+    try {
+      const { test_id } =
+        await this.supabaseService.getByCondition<TestVariation>({
+          tableName: TableName.TEST_VARIATIONS,
+          selectQuery: 'test_id',
+          condition: 'prolific_test_id',
+          value: prolificStudyId,
+          single: true,
+        });
+
+      return test_id;
+    } catch (error) {
+      throw new NotFoundException(
+        `Failed to find test variation with study id ${prolificStudyId}`,
+      );
+    }
+  }
+
+  public updateTestStatus(testId: string, status: TestStatus) {
+    return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
+      { key: 'id', value: testId },
+    ]);
   }
 
   private transformTestData(data: RawTestData): TestData {

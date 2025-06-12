@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  forwardRef,
+  Get,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { TestsService } from './tests.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { CreateTestDto } from './dto';
@@ -10,6 +19,7 @@ import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 export class TestsController {
   constructor(
     private readonly testsService: TestsService,
+    @Inject(forwardRef(() => ProlificService))
     private readonly prolificService: ProlificService,
     private readonly testMonitoringService: TestMonitoringService,
   ) {}
