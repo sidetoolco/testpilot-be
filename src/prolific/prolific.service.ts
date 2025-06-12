@@ -186,6 +186,12 @@ export class ProlificService {
     await this.testsService.updateTestStatus(testId, 'active');
   }
 
+  public async publishStudy(studyId: string) {
+    this.httpClient.post(`/studies/${studyId}/transition/`, {
+      action: 'PUBLISH',
+    });
+  }
+
   private createProlificFilters(demographics: DemographicsDto) {
     const filters = [];
     const countryMap = {

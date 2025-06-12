@@ -3,6 +3,7 @@ import {
   Controller,
   forwardRef,
   Get,
+  HttpStatus,
   Inject,
   Param,
   Post,
@@ -30,7 +31,7 @@ export class TestsController {
   }
 
   @Post()
-  async publishTest(@Body() dto: CreateTestDto) {
+  async createTest(@Body() dto: CreateTestDto) {
     // Create the study in Prolific
     const prolificStudy = await this.prolificService.createStudy(dto);
 
@@ -52,5 +53,12 @@ export class TestsController {
     return {
       url: `https://app.prolific.com/submissions/complete?cc=${prolificStudy.completion_codes[0].code}`,
     };
+  }
+
+  @Post('/:testId/publish')
+  async publishTest(@Param('testId') testId: string) {
+    await this.testsService.publishTest(testId);
+
+    return HttpStatus.OK;
   }
 }
