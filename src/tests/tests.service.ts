@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
 import {
   Product,
@@ -17,10 +21,14 @@ import {
   TestVariation,
 } from 'lib/interfaces/entities.interface';
 import { TestStatus } from './types/test-status.type';
+import { ProlificService } from 'prolific/prolific.service';
 
 @Injectable()
 export class TestsService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly prolificService: ProlificService,
+  ) {}
 
   public async getTestById(testId: string): Promise<Test> {
     const test = await this.supabaseService.getById<Test>({
@@ -152,6 +160,23 @@ export class TestsService {
     return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
       { key: 'id', value: testId },
     ]);
+  }
+
+  public async publishTest(testId: string) {
+    const testVariations = await this.getTestVariations(testId);
+
+    for (const variation of testVariations) {
+      try {
+        await this.prolificService.publishStudy(variation.prolific_test_id);
+
+        // Wait 30 seconds before processing the next variation
+        await new Promise((resolve) => setTimeout(resolve, 30000));
+      } catch (error) {
+        throw new BadRequestException(
+          `Failed to publish study for variation ${variation.variation_type}`,
+        );
+      }
+    }
   }
 
   private transformTestData(data: RawTestData): TestData {
