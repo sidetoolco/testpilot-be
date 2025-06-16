@@ -3,6 +3,7 @@ import {
   HttpStatus,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { SupabaseService } from 'supabase/supabase.service';
@@ -12,6 +13,8 @@ import { EmailService } from 'email/email.service';
 
 @Injectable()
 export class CompaniesService {
+  private readonly logger = new Logger(CompaniesService.name);
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly emailService: EmailService,
@@ -58,6 +61,8 @@ export class CompaniesService {
 
       return token;
     } catch (error) {
+      this.logger.error(error);
+      
       if (error.code === '23505') {
         throw new ConflictException(
           'An invitation for this email already exists',
