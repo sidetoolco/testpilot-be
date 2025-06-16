@@ -22,12 +22,14 @@ import {
 } from 'lib/interfaces/entities.interface';
 import { TestStatus } from './types/test-status.type';
 import { ProlificService } from 'prolific/prolific.service';
+import { TestStatusGateway } from './gateways/test-status.gateway';
 
 @Injectable()
 export class TestsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly prolificService: ProlificService,
+    private readonly testStatusGateway: TestStatusGateway,
   ) {}
 
   public async getTestById(testId: string): Promise<Test> {
@@ -157,12 +159,17 @@ export class TestsService {
   }
 
   public updateTestStatus(testId: string, status: TestStatus) {
+    this.testStatusGateway.emitTestStatusUpdate(testId, status);
+    
     return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
       { key: 'id', value: testId },
     ]);
   }
 
   public async publishTest(testId: string) {
+    // Update test status to "in progress"
+    await this.updateTestStatus(testId, 'in progress');
+
     const testVariations = await this.getTestVariations(testId);
 
     for (const variation of testVariations) {
