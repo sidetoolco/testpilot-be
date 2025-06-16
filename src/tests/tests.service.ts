@@ -23,6 +23,7 @@ import {
 import { TestStatus } from './types/test-status.type';
 import { ProlificService } from 'prolific/prolific.service';
 import { TestStatusGateway } from './gateways/test-status.gateway';
+import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 
 @Injectable()
 export class TestsService {
@@ -30,6 +31,7 @@ export class TestsService {
     private readonly supabaseService: SupabaseService,
     private readonly prolificService: ProlificService,
     private readonly testStatusGateway: TestStatusGateway,
+    private readonly testMonitoringService: TestMonitoringService,
   ) {}
 
   public async getTestById(testId: string): Promise<Test> {
@@ -160,7 +162,7 @@ export class TestsService {
 
   public updateTestStatus(testId: string, status: TestStatus) {
     this.testStatusGateway.emitTestStatusUpdate(testId, status);
-    
+
     return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
       { key: 'id', value: testId },
     ]);
@@ -175,6 +177,10 @@ export class TestsService {
     for (const variation of testVariations) {
       try {
         await this.prolificService.publishStudy(variation.prolific_test_id);
+        await this.testMonitoringService.scheduleTestCompletionCheck(
+          variation.prolific_test_id,
+          testId,
+        );
 
         // Wait 30 seconds before processing the next variation
         await new Promise((resolve) => setTimeout(resolve, 30000));
@@ -184,6 +190,8 @@ export class TestsService {
         );
       }
     }
+
+    return testVariations;
   }
 
   private transformTestData(data: RawTestData): TestData {
