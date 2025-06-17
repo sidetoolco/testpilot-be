@@ -1,0 +1,121 @@
+# Este workflow permite ejecutar el proceso de despliegue manualmente a GCP
+# Se puede activar desde la pestaña "Actions" en GitHub
+name: Manual GCP Deploy
+
+# Configuración del trigger manual (workflow_dispatch)
+on:
+  workflow_dispatch:
+    # Definición de inputs que se pueden configurar al ejecutar el workflow
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - production
+
+# Definición de los jobs que se ejecutarán
+jobs:
+  # Job principal de despliegue
+  deploy-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    steps:
+      # Paso 1: Obtener el código del repositorio
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # Paso 2: Configurar Node.js en el runner
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # Paso 3: Instalar dependencias
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      # Paso 4: Ejecutar pruebas
+      - name: 🧪 Run tests
+        run: npm test
+
+      # Paso 5: Construir la aplicación
+      - name: 🏗️ Build application
+        run: npm run build
+
+      # Paso 6: Configurar autenticación de Google Cloud
+      - name: 🔐 Set up Google Cloud auth
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Paso 7: Configurar proyecto de GCP
+      - name: 🧩 Set gcloud project
+        run: gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
+
+      # Paso 8: Habilitar servicios requeridos
+      - name: ⚙️ Enable required services
+        run: |
+          gcloud services enable run.googleapis.com
+          gcloud services enable artifactregistry.googleapis.com
+          gcloud services enable secretmanager.googleapis.com
+
+      # Paso 9: Construir y desplegar la aplicación
+      - name: 🚀 Build and Deploy Backend
+        run: |
+          SERVICE="backend"
+          REGION="us-central1"
+          PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+          REPO="tower-api"
+          IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE"
+
+          echo "📦 Building and pushing $SERVICE to $IMAGE"
+          timeout 1800 gcloud builds submit . \
+            --config=cloudbuild.yaml \
+            --substitutions=_IMAGE="$IMAGE",_SERVICE_NAME="$SERVICE" \
+            --machine-type=e2-highcpu-8 \
+            --disk-size=100
+
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to build $SERVICE"
+            exit 1
+          fi
+
+          # Determinar el nombre del servicio basado en el ambiente
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            SERVICE_NAME="${SERVICE}-prod"
+            SECRET_SUFFIX="_PROD"
+          else
+            SERVICE_NAME="${SERVICE}-dev"
+            SECRET_SUFFIX="_DEV"
+          fi
+
+          echo "☁️ Deploying $SERVICE_NAME to Cloud Run with secrets from Secret Manager"
+          gcloud run deploy "$SERVICE_NAME" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --quiet \
+            --verbosity=info \
+            --set-secrets=\
+          SUPABASE_URL=SUPABASE_URL${SECRET_SUFFIX}:latest,\
+          SUPABASE_AUTH_KEY=SUPABASE_AUTH_KEY${SECRET_SUFFIX}:latest,\
+          AUTH0_DOMAIN=AUTH0_DOMAIN${SECRET_SUFFIX}:latest,\
+          AUTH0_CLIENT_ID=AUTH0_CLIENT_ID${SECRET_SUFFIX}:latest,\
+          AUTH0_CLIENT_CERTIFICATE=AUTH0_CLIENT_CERTIFICATE${SECRET_SUFFIX}:latest
+
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to deploy $SERVICE_NAME"
+            exit 1
+          fi
+
+          echo "✅ Successfully deployed $SERVICE_NAME" 

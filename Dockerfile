@@ -1,45 +1,38 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Etapa de construcción
+FROM node:18-alpine AS builder
 
+# Directorio de trabajo
 WORKDIR /app
 
-# Copy package files
+# Copiar archivos de dependencias
 COPY package*.json ./
 
-# Install dependencies
+# Instalar dependencias
 RUN npm ci
 
-# Copy source code
+# Copiar el código fuente
 COPY . .
 
-# Build the application
+# Construir la aplicación
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine
+# Etapa de producción
+FROM node:18-alpine
 
+# Directorio de trabajo
 WORKDIR /app
 
-# Copy package files
+# Copiar archivos de dependencias
 COPY package*.json ./
 
-# Install production dependencies only
+# Instalar solo dependencias de producción
 RUN npm ci --only=production
 
-# Copy built application from builder stage
+# Copiar los archivos construidos desde la etapa de builder
 COPY --from=builder /app/dist ./dist
 
-# Set environment variables
-ENV NODE_ENV=production
-ENV PORT=8080
-ENV FE_URL="*"
+# Exponer el puerto
+EXPOSE 3000
 
-# Create a non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
-
-# Expose the application port
-EXPOSE 8080
-
-# Start the application with increased timeout
-CMD ["node", "--max-old-space-size=256", "dist/main.js"]
+# Comando para ejecutar la aplicación
+CMD ["node", "dist/main"]

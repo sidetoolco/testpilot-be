@@ -1,0 +1,52 @@
+# Configuración de Cloud Build para construir y publicar la imagen Docker
+steps:
+  # Paso 1: Construir la aplicación Node.js
+  - name: 'node:18'
+    entrypoint: npm
+    args: ['install']
+    id: 'install-deps'
+
+  - name: 'node:18'
+    entrypoint: npm
+    args: ['run', 'build']
+    id: 'build-app'
+
+  # Paso 2: Construir la imagen Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', '${_IMAGE}',
+      '-f', 'Dockerfile',
+      '.'
+    ]
+    id: 'build-image'
+
+  # Paso 3: Publicar la imagen en Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}']
+    id: 'push-image'
+
+# Configuración de la imagen resultante
+images:
+  - '${_IMAGE}'
+
+# Configuración de sustituciones
+substitutions:
+  _IMAGE: ''  # Se proporciona en tiempo de ejecución
+  _SERVICE_NAME: ''  # Se proporciona en tiempo de ejecución
+
+# Configuración de opciones
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: '100'
+  dynamicSubstitutions: true
+
+# Configuración de timeouts
+timeout: '1800s'  # 30 minutos máximo
+
+# Configuración de artefactos
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}-build-artifacts/'
+    paths: ['dist/**'] 
