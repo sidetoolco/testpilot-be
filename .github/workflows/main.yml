@@ -1,17 +1,14 @@
-# Este workflow se ejecuta automáticamente en la rama main
-# Se activa con push y pull requests a main
-name: Main Branch Workflow
+# Este workflow se ejecuta automáticamente en las ramas main y dev
+# Se activa con push y pull requests a main y dev
+name: Branch Workflow
 
 # Configuración de los triggers automáticos
 on:
-  # Se activa cuando hay un push a la rama main
+  # Se activa cuando hay un push a las ramas main o dev
   push:
     branches:
       - main
-  # Se activa cuando hay un pull request a la rama main
-  pull_request:
-    branches:
-      - main
+      - dev
 
 # Definición de los jobs que se ejecutarán
 jobs:
@@ -46,13 +43,13 @@ jobs:
       - name: 🏗️ Build application
         run: npm run build
 
-  # Job para el despliegue a producción
+  # Job para el despliegue
   deploy:
     # Solo se ejecuta si:
     # 1. El job build-and-test se completó exitosamente
-    # 2. Es un push directo a main (no un pull request)
+    # 2. Es un push directo a main o dev (no un pull request)
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     
     runs-on: ubuntu-latest
     permissions:
@@ -92,6 +89,17 @@ jobs:
           REPO="tower-api"
           IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE"
 
+          # Determinar el ambiente y sufijo de secretos basado en la rama
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            SERVICE_NAME="${SERVICE}-prod"
+            SECRET_SUFFIX=""
+            echo "🚀 Deploying to PRODUCTION environment"
+          else
+            SERVICE_NAME="${SERVICE}-dev"
+            SECRET_SUFFIX="_DEV"
+            echo "🚀 Deploying to DEVELOPMENT environment"
+          fi
+
           echo "📦 Building and pushing $SERVICE to $IMAGE"
           timeout 1800 gcloud builds submit . \
             --config=cloudbuild.yaml \
@@ -104,8 +112,8 @@ jobs:
             exit 1
           fi
 
-          echo "☁️ Deploying $SERVICE to Cloud Run with secrets from Secret Manager"
-          gcloud run deploy "$SERVICE" \
+          echo "☁️ Deploying $SERVICE_NAME to Cloud Run with secrets from Secret Manager"
+          gcloud run deploy "$SERVICE_NAME" \
             --image "$IMAGE" \
             --region "$REGION" \
             --platform managed \
@@ -113,15 +121,12 @@ jobs:
             --quiet \
             --verbosity=info \
             --set-secrets=\
-          SUPABASE_URL=SUPABASE_URL:latest,\
-          SUPABASE_AUTH_KEY=SUPABASE_AUTH_KEY:latest,\
-          AUTH0_DOMAIN=AUTH0_DOMAIN:latest,\
-          AUTH0_CLIENT_ID=AUTH0_CLIENT_ID:latest,\
-          AUTH0_CLIENT_CERTIFICATE=AUTH0_CLIENT_CERTIFICATE:latest
-
+          SUPABASE_URL=SUPABASE_URL${SECRET_SUFFIX}:latest,\
+          SUPABASE_AUTH_KEY=SUPABASE_AUTH_KEY${SECRET_SUFFIX}:latest,\
+        
           if [ $? -ne 0 ]; then
-            echo "❌ Failed to deploy $SERVICE"
+            echo "❌ Failed to deploy $SERVICE_NAME"
             exit 1
           fi
 
-          echo "✅ Successfully deployed $SERVICE" 
+          echo "✅ Successfully deployed $SERVICE_NAME" 
