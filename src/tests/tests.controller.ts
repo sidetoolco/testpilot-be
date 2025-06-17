@@ -13,7 +13,6 @@ import { TestsService } from './tests.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { CreateTestDto } from './dto';
 import { ProlificService } from 'prolific/prolific.service';
-import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('tests')
@@ -22,7 +21,6 @@ export class TestsController {
     private readonly testsService: TestsService,
     @Inject(forwardRef(() => ProlificService))
     private readonly prolificService: ProlificService,
-    private readonly testMonitoringService: TestMonitoringService,
   ) {}
 
   @Get('/:id')
@@ -41,12 +39,6 @@ export class TestsController {
       dto.testId,
       dto.variationType,
       prolificStudy.id,
-    );
-
-    // Schedule the completion check
-    await this.testMonitoringService.scheduleTestCompletionCheck(
-      prolificStudy.id,
-      dto.testId,
     );
 
     // Return the completion URL
