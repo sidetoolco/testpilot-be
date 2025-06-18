@@ -17,10 +17,9 @@ export class AmazonProduct {
   price: number;
 
   @IsString()
-  @IsUrl()
   image_url: string;
+
   @IsString()
-  @IsUrl()
   product_url: string;
 
   @IsNumber()
