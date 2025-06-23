@@ -185,9 +185,8 @@ export class TestsService {
         // Wait 30 seconds before processing the next variation
         await new Promise((resolve) => setTimeout(resolve, 30000));
       } catch (error) {
-        throw new BadRequestException(
-          `Failed to publish study for variation ${variation.variation_type}`,
-        );
+        const errorMessage = error instanceof Error ? error.message : `Failed to publish study for variation ${variation.variation_type}`;
+        throw new BadRequestException(errorMessage);
       }
     }
 

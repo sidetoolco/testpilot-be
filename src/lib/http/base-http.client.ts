@@ -40,7 +40,8 @@ export abstract class BaseHttpClient {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await this.getErrorData(response);
+      throw new Error(errorData);
     }
     
     return response.json();
@@ -60,7 +61,8 @@ export abstract class BaseHttpClient {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await this.getErrorData(response);
+      throw new Error(errorData);
     }
     
     return response.json();
@@ -80,7 +82,8 @@ export abstract class BaseHttpClient {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await this.getErrorData(response);
+      throw new Error(errorData);
     }
     
     return response.json();
@@ -100,7 +103,8 @@ export abstract class BaseHttpClient {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await this.getErrorData(response);
+      throw new Error(errorData);
     }
     
     return response.json();
@@ -115,9 +119,19 @@ export abstract class BaseHttpClient {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await this.getErrorData(response);
+      throw new Error(errorData);
     }
     
     return response.json();
+  }
+
+  private async getErrorData(response: Response): Promise<string> {
+    try {
+      const data = await response.json();
+      return data.title || `HTTP error! status: ${response.status}`;
+    } catch {
+      return `HTTP error! status: ${response.status}`;
+    }
   }
 }
