@@ -17,7 +17,10 @@ export class ScreeningService {
     private readonly adalineService: AdalineService,
   ) {}
 
-  async validateScreeningQuestion(question: string) {
+  async validateScreeningQuestion(
+    question: string,
+    desiredAnswer: 'Yes' | 'No',
+  ) {
     // First check: Ensure the input is a question and is a yes/no question
     const trimmed = question.trim();
     if (!trimmed.endsWith('?')) {
@@ -59,7 +62,9 @@ export class ScreeningService {
             if (content.modality === 'text') {
               return {
                 ...content,
-                value: content.value.replace('{question}', question),
+                value: content.value
+                  .replace('{question}', question)
+                  .replace('{desiredAnswer}', desiredAnswer),
               };
             }
             return content;
