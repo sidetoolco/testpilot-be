@@ -174,6 +174,11 @@ export class TestsService {
 
     const testVariations = await this.getTestVariations(testId);
 
+    // Check balance before publishing any studies
+    await this.prolificService.checkBalanceForTestPublishing(
+      testVariations.map(({ prolific_test_id }) => prolific_test_id),
+    );
+
     for (const variation of testVariations) {
       try {
         await this.prolificService.publishStudy(variation.prolific_test_id);

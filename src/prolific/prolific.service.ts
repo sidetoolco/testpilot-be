@@ -1,6 +1,17 @@
-import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { ProlificHttpClient } from './prolific-http.client';
-import { ProlificStudy, ProlificStudySubmission } from './interfaces';
+import {
+  ProlificBalance,
+  ProlificStudy,
+  ProlificStudyCostResponse,
+  ProlificStudySubmission,
+} from './interfaces';
 import { StudyStatus } from './types';
 import { CreateTestDto, DemographicsDto } from 'tests/dto';
 import { ConfigService } from '@nestjs/config';
@@ -10,6 +21,7 @@ import { TestsService } from 'tests/tests.service';
 @Injectable()
 export class ProlificService {
   private readonly logger = new Logger(ProlificService.name);
+  private readonly WORKSPACE_ID = '679be658b0f9417843a07767';
 
   constructor(
     private readonly httpClient: ProlificHttpClient,
@@ -193,6 +205,78 @@ export class ProlificService {
       this.logger.error(`Failed to publish study ${studyId}:`, error);
       throw error;
     }
+  }
+
+  public async getWorkspaceBalance(): Promise<ProlificBalance> {
+    try {
+      return await this.httpClient.get<ProlificBalance>(
+        `/workspaces/${this.WORKSPACE_ID}/balance/`,
+      );
+    } catch (error) {
+      this.logger.error(`Failed to get workspace balance:`, error);
+      throw error;
+    }
+  }
+
+  public async calculateStudyCost(
+    reward: number,
+    totalAvailablePlaces: number,
+  ): Promise<ProlificStudyCostResponse> {
+    try {
+      return await this.httpClient.post<ProlificStudyCostResponse>(
+        '/study-cost-calculator/',
+        {
+          reward,
+          total_available_places: totalAvailablePlaces,
+        },
+      );
+    } catch (error) {
+      this.logger.error('Failed to calculate study cost:', error);
+      throw error;
+    }
+  }
+
+  public async checkBalanceForTestPublishing(
+    studyIds: string[],
+  ): Promise<void> {
+    // Get workspace balance
+    const balance = await this.getWorkspaceBalance();
+
+    let totalRequiredBalance = 0;
+
+    // Calculate total cost for all variations
+    for (const studyId of studyIds) {
+      try {
+        const study = await this.getStudy(studyId);
+        const studyCost = await this.calculateStudyCost(
+          study.reward,
+          study.total_available_places,
+        );
+
+        totalRequiredBalance += studyCost.total_cost;
+      } catch (error) {
+        this.logger.error(
+          `Failed to calculate cost for study ${studyId}:`,
+          error,
+        );
+
+        throw new BadRequestException(
+          `Failed to calculate cost for study ${studyId}`,
+        );
+      }
+    }
+
+    // Check if we have enough balance
+    if (balance.available_balance > totalRequiredBalance) {
+      const shortfall = totalRequiredBalance - balance.available_balance;
+      throw new BadRequestException(
+        `Insufficient balance. Required: ${(totalRequiredBalance / 100).toFixed(2)} ${balance.currency_code}, Available: ${(balance.available_balance / 100).toFixed(2)} ${balance.currency_code}, Shortfall: ${(shortfall / 100).toFixed(2)} ${balance.currency_code}`,
+      );
+    }
+
+    this.logger.log(
+      `Balance check passed. Total required: ${totalRequiredBalance} ${balance.currency_code}, Available: ${balance.available_balance} ${balance.currency_code}`,
+    );
   }
 
   private createProlificFilters(demographics: DemographicsDto) {
