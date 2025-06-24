@@ -1,11 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseHttpClient } from '../lib/http/base-http.client';
 
 @Injectable()
 export class ProlificHttpClient extends BaseHttpClient {
-  private readonly logger = new Logger(ProlificHttpClient.name);
-
   constructor(private readonly configService: ConfigService) {
     const prolificToken = configService.get('PROLIFIC_API_TOKEN');
     if (!prolificToken) {
