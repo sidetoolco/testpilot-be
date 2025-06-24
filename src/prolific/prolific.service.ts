@@ -173,9 +173,7 @@ export class ProlificService {
         },
       );
     } catch (error) {
-      this.logger.error(
-        `Failed to screen out submission ${submissionId} for study ${studyId}: ${error}`,
-      );
+      this.logger.error(`Failed to screen out submission ${submissionId} for study ${studyId}:`, error);
       throw error;
     }
   }
@@ -187,9 +185,14 @@ export class ProlificService {
   }
 
   public async publishStudy(studyId: string) {
-    this.httpClient.post(`/studies/${studyId}/transition/`, {
-      action: 'PUBLISH',
-    });
+    try {
+      await this.httpClient.post(`/studies/${studyId}/transition/`, {
+        action: 'PUBLISH',
+      });
+    } catch (error) {
+      this.logger.error(`Failed to publish study ${studyId}:`, error);
+      throw error;
+    }
   }
 
   private createProlificFilters(demographics: DemographicsDto) {
