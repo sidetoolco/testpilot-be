@@ -180,12 +180,17 @@ export class ProlificService {
         `/studies/${studyId}/screen-out-submissions/`,
         {
           submission_ids: [submissionId],
-          increase_places: true,
           bonus_per_submission: 0.14,
         },
       );
+
+      // After successfully screening out, increase available places
+      await this.increaseStudyAvailablePlaces(studyId);
     } catch (error) {
-      this.logger.error(`Failed to screen out submission ${submissionId} for study ${studyId}:`, error);
+      this.logger.error(
+        `Failed to screen out submission ${submissionId} for study ${studyId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -277,6 +282,32 @@ export class ProlificService {
     this.logger.log(
       `Balance check passed. Total required: ${totalRequiredBalance} ${balance.currency_code}, Available: ${balance.available_balance} ${balance.currency_code}`,
     );
+  }
+
+  public async increaseStudyAvailablePlaces(studyId: string): Promise<void> {
+    try {
+      // First, get the current study to find the current total_available_places
+      const currentStudy = await this.getStudy(studyId);
+      const currentPlaces = currentStudy.total_available_places;
+
+      const newPlaces = currentPlaces + 1;
+
+      // Update the study with the new total_available_places
+      await this.httpClient.patch(`/studies/${studyId}`, {
+        total_available_places: newPlaces,
+      });
+
+      this.logger.log(
+        `Increased available places for study ${studyId} from ${currentPlaces} to ${newPlaces}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to increase available places for study ${studyId}:`,
+        error,
+      );
+
+      throw error;
+    }
   }
 
   private createProlificFilters(demographics: DemographicsDto) {
