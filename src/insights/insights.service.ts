@@ -9,6 +9,7 @@ import { calculateAverageScore } from 'lib/helpers';
 import {
   AiInsight,
   Event,
+  ResponseComparison,
   ResponseSurvey,
   TestVariation,
 } from 'lib/interfaces/entities.interface';
@@ -17,8 +18,10 @@ import { ProductsService } from 'products/products.service';
 import { ProlificService } from 'prolific/prolific.service';
 import { SupabaseService } from 'supabase/supabase.service';
 import { TestsService } from 'tests/tests.service';
-import { TestData } from 'tests/interfaces';
-import { insightsFormatter } from './formatters';
+import {
+  insightsFormatter,
+  surveyResponsesForSummaryFormatter,
+} from './formatters';
 import { AdalineService } from 'adaline/adaline.service';
 import { TestObjective } from 'tests/enums';
 import { ChatCompletionMessageParam } from 'openai/resources/chat';
@@ -46,9 +49,6 @@ export class InsightsService {
 
   public async saveAiInsights(testId: string) {
     try {
-      if (!testId) {
-        throw new BadRequestException('Test ID is required');
-      }
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
       const aiInsights = await this.generateAiInsights(testId, objective);
@@ -157,7 +157,7 @@ export class InsightsService {
       const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
         await Promise.all([
           this.purchaseDrivers(testId, variation),
-          this.competitiveInsights(test, variantChoosen, testId, shopperCount),
+          this.competitiveInsights(variantChoosen, testId, shopperCount),
           this.saveInsights(
             testId,
             summary.shareOfBuy,
@@ -194,7 +194,6 @@ export class InsightsService {
   }
 
   async competitiveInsights(
-    test: TestData,
     variation: TestVariation,
     testId: string,
     shopperCount: number,
@@ -550,6 +549,19 @@ export class InsightsService {
     testObjective: TestObjective,
   ) {
     const formattedData = await this.getInsightsData(testId);
+
+    // Generate comment summary for all variants in one call
+    let commentSummary: string | null = null;
+
+    try {
+      commentSummary = await this.generateCommentSummary(testId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate comment summary for test ${testId}:`,
+        error,
+      );
+    }
+
     const {
       config: { provider, model },
       messages,
@@ -583,7 +595,10 @@ export class InsightsService {
       { model },
     );
 
-    return insightsFormatter(unformattedInsights);
+    return {
+      ...insightsFormatter(unformattedInsights),
+      comment_summary: commentSummary,
+    };
   }
 
   private async calculateShareOfClicks(
@@ -601,5 +616,102 @@ export class InsightsService {
     ).length;
 
     return totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0;
+  }
+
+  private async generateCommentSummary(testId: string) {
+    try {
+      this.logger.log(`Generating comment summary for test ${testId}`);
+
+      // Format all variants' survey responses
+      const variantsData = await this.formatAllVariantsSurveyResponses(testId);
+
+      // Get the Adaline prompt deployment
+      const {
+        config: { provider, model },
+        messages,
+      } = await this.adalineService.getPromptDeployment(
+        undefined,
+        '225e999e-3bba-4ca5-99a1-34805f9c8ac7',
+      );
+
+      if (provider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format messages for OpenAI
+      const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+        // Replace {data} placeholder with all variants data
+        const content = msg.content
+          .map((block) => {
+            if (block.value.includes('{data}')) {
+              return block.value.replace(
+                '{data}',
+                JSON.stringify(variantsData, null, 2),
+              );
+            }
+
+            return block.value;
+          })
+          .join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      // Genearte the summary using OpenAI - single call for all variants
+      const summary = await this.openAiService.createChatCompletion(
+        openAiMessages,
+        { model },
+      );
+
+      return summary;
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate comment summary for test ${testId}:`,
+        error,
+      );
+
+      throw error;
+    }
+  }
+
+  private async formatAllVariantsSurveyResponses(testId: string) {
+    // Get all test variations
+    const testVariations = await this.testsService.getTestVariations(testId);
+
+    const variantsData = {};
+
+    // Process each variant
+    for (const variation of testVariations) {
+      // Get survey responses for this variant
+      const surveyResponses = await this.productsService.getProductSurveys(
+        variation.product_id,
+        testId,
+      );
+
+      // Get comparison responses
+      const comparisonResponses =
+        await this.supabaseService.findMany<ResponseComparison>(
+          TableName.RESPONSES_COMPARISONS,
+          {
+            test_id: testId,
+            product_id: variation.product_id,
+          },
+        );
+
+      // Format responses for this variant
+      const formattedData = surveyResponsesForSummaryFormatter(
+        surveyResponses,
+        comparisonResponses,
+      );
+
+      variantsData[`Variant ${variation.variation_type}`] = formattedData;
+    }
+
+    return variantsData;
   }
 }

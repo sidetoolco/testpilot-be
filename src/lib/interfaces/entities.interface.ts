@@ -77,6 +77,23 @@ export interface ResponseSurvey {
   improve_suggestions: string;
 }
 
+export interface ResponseComparison {
+  id: string;
+  test_id: string;
+  product_id: string;
+  created_at?: string;
+  competitor_id: string;
+  value?: number | null;
+  appearance?: number | null;
+  confidence?: number | null;
+  brand?: number | null;
+  convenience?: number | null;
+  likes_most?: string | null;
+  improve_suggestions?: string | null;
+  choose_reason?: string | null;
+  tester_id?: string | null;
+}
+
 export interface TestTime {
   id: string;
 }
