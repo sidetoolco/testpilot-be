@@ -8,4 +8,8 @@ export class ScreenOutSubmissionDto {
     @IsNotEmpty()
     @IsString()
     participantId: string;
+
+    @IsNotEmpty()
+    @IsString()
+    studyInternalName: string;
 }

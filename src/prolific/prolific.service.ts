@@ -174,7 +174,7 @@ export class ProlificService {
     }
   }
 
-  public async screenOutSubmission(studyId: string, submissionId: string) {
+  public async screenOutSubmission(studyId: string, submissionId: string, studyInternalName: string) {
     try {
       await this.httpClient.post(
         `/studies/${studyId}/screen-out-submissions/`,
@@ -185,7 +185,7 @@ export class ProlificService {
       );
 
       // After successfully screening out, increase available places
-      await this.increaseStudyAvailablePlaces(studyId);
+      await this.increaseStudyAvailablePlaces(studyId, studyInternalName);
     } catch (error) {
       this.logger.error(
         `Failed to screen out submission ${submissionId} for study ${studyId}:`,
@@ -284,7 +284,7 @@ export class ProlificService {
     );
   }
 
-  public async increaseStudyAvailablePlaces(studyId: string): Promise<void> {
+  public async increaseStudyAvailablePlaces(studyId: string, studyInternalName: string): Promise<void> {
     try {
       // First, get the current study to find the current total_available_places
       const currentStudy = await this.getStudy(studyId);
@@ -295,6 +295,13 @@ export class ProlificService {
       // Update the study with the new total_available_places
       await this.httpClient.patch(`/studies/${studyId}`, {
         total_available_places: newPlaces,
+        access_details: [
+          {
+            external_url:
+              `https://app.testpilotcpg.com/questions/${studyInternalName}`,
+            total_allocation: 1,
+          },
+        ],
       });
 
       this.logger.log(

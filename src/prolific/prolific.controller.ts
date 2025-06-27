@@ -18,7 +18,8 @@ export class ProlificController {
 
   @Post('/submission/screen-out')
   async screenOutSubmission(
-    @Body() { studyId, participantId }: ScreenOutSubmissionDto,
+    @Body()
+    { studyId, participantId, studyInternalName }: ScreenOutSubmissionDto,
   ) {
     this.logger.log(
       `Screening out participant's ${participantId} submission for study ${studyId}`,
@@ -35,7 +36,11 @@ export class ProlificController {
       );
     }
 
-    await this.prolificService.screenOutSubmission(studyId, submission.id);
+    await this.prolificService.screenOutSubmission(
+      studyId,
+      submission.id,
+      studyInternalName,
+    );
 
     this.logger.log(`Participant ${participantId} screened out successfully`);
     return HttpStatus.OK;
