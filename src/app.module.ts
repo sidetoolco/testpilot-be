@@ -24,22 +24,28 @@ import { CompaniesModule } from './companies/companies.module';
     ConfigModule.forRoot({ isGlobal: true }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        connection: {
-          url: configService.get('REDIS_URL'),
-          tls: {
-            rejectUnauthorized: false,
+      useFactory: async (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+        const isTLS = !redisUrl?.includes('localhost');
+
+        return {
+          connection: {
+            url: redisUrl,
+            ...(isTLS
+              ? {
+                  tls: {
+                    rejectUnauthorized: false,
+                  },
+                }
+              : {}),
+            enableReadyCheck: false,
+            retryStrategy: (times: number) => {
+              if (times > 5) return null;
+              return Math.pow(2, times) * 100;
+            },
           },
-          enableReadyCheck: false,
-          retryStrategy: (times: number) => {
-            const delay = Math.min(times * 50, 2000);
-            console.log(
-              `Retrying connection attempt ${times} with delay ${delay}ms`,
-            );
-            return delay;
-          },
-        },
-      }),
+        };
+      },
       inject: [ConfigService],
     }),
     SupabaseModule,
