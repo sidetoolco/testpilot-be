@@ -305,7 +305,7 @@ export class ProlificService {
       // Update the study with the new total_available_places
       await this.httpClient.patch(`/studies/${studyId}`, {
         total_available_places: newPlaces,
-        external_study_url: `https://app.testpilotcpg.com/questions/${studyInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
+        // external_study_url: `https://app.testpilotcpg.com/questions/${studyInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
         // access_details: [
         //   {
         //     external_url:
