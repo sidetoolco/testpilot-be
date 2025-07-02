@@ -114,8 +114,8 @@ export class ProlificService {
         //   },
         // ],
         external_study_url: createTestDto.customScreeningEnabled
-          ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}`
-          : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
+          ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`
+          : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
         prolific_id_option: 'url_parameters',
         completion_codes: [
           {
