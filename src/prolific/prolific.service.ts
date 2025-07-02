@@ -105,14 +105,17 @@ export class ProlificService {
         internal_name: createTestDto.publicInternalName,
         description:
           'Welcome to your personalized shopping experience! This process is divided into two simple steps to understand your product preferences.\n\nStep 1: Choose from 12 products\nBrowse through our selection of products and choose the one you like the most. We want to know which ones you prefer.\n\nStep 2: Complete a short survey\nHelp us get to know you better by completing a brief survey.',
-        access_details: [
-          {
-            external_url: createTestDto.customScreeningEnabled
-              ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}`
-              : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
-            total_allocation: createTestDto.targetNumberOfParticipants,
-          },
-        ],
+        // access_details: [
+        //   {
+        //     external_url: createTestDto.customScreeningEnabled
+        //       ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}`
+        //       : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
+        //     total_allocation: createTestDto.targetNumberOfParticipants,
+        //   },
+        // ],
+        external_study_url: createTestDto.customScreeningEnabled
+          ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}`
+          : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
         prolific_id_option: 'url_parameters',
         completion_codes: [
           {
@@ -174,7 +177,11 @@ export class ProlificService {
     }
   }
 
-  public async screenOutSubmission(studyId: string, submissionId: string, studyInternalName: string) {
+  public async screenOutSubmission(
+    studyId: string,
+    submissionId: string,
+    studyInternalName: string,
+  ) {
     try {
       await this.httpClient.post(
         `/studies/${studyId}/screen-out-submissions/`,
@@ -284,7 +291,10 @@ export class ProlificService {
     );
   }
 
-  public async increaseStudyAvailablePlaces(studyId: string, studyInternalName: string): Promise<void> {
+  public async increaseStudyAvailablePlaces(
+    studyId: string,
+    studyInternalName: string,
+  ): Promise<void> {
     try {
       // First, get the current study to find the current total_available_places
       const currentStudy = await this.getStudy(studyId);
@@ -295,13 +305,14 @@ export class ProlificService {
       // Update the study with the new total_available_places
       await this.httpClient.patch(`/studies/${studyId}`, {
         total_available_places: newPlaces,
-        access_details: [
-          {
-            external_url:
-              `https://app.testpilotcpg.com/questions/${studyInternalName}`,
-            total_allocation: 1,
-          },
-        ],
+        external_study_url: `https://app.testpilotcpg.com/questions/${studyInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
+        // access_details: [
+        //   {
+        //     external_url:
+        //       `https://app.testpilotcpg.com/questions/${studyInternalName}`,
+        //     total_allocation: 1,
+        //   },
+        // ],
       });
 
       this.logger.log(

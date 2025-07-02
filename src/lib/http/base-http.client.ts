@@ -129,7 +129,8 @@ export abstract class BaseHttpClient {
   private async getErrorData(response: Response): Promise<string> {
     try {
       const data = await response.json();
-      return data.title || `HTTP error! status: ${response.status}`;
+
+      return JSON.stringify(data) || `HTTP error! status: ${response.status}`;
     } catch {
       return `HTTP error! status: ${response.status}`;
     }
