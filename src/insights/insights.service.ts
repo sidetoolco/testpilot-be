@@ -51,6 +51,7 @@ export class InsightsService {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
+
       const aiInsights = await this.generateAiInsights(testId, objective);
 
       this.logger.log(`Saving AI insights for test ${testId}`);
@@ -64,7 +65,7 @@ export class InsightsService {
       );
     } catch (error) {
       this.logger.error(
-        `Failed to generate AI insights for test ${testId}:`,
+        `Failed to generate or save AI insights for test ${testId}:`,
         error,
       );
       throw error;
@@ -562,43 +563,125 @@ export class InsightsService {
       );
     }
 
-    const {
-      config: { provider, model },
-      messages,
-    } = await this.adalineService.getPromptDeployment(testObjective);
+    // First call: Generate initial insights
+    let unformattedInsights: string;
+    try {
+      const {
+        config: { provider, model },
+        messages,
+      } = await this.adalineService.getPromptDeployment(testObjective);
 
-    if (provider !== 'openai') {
+      if (provider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format messages for OpenAI
+      const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+        // Concatenate all text blocks in content
+        const content = msg.content.map((block) => block.value).join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      unformattedInsights = await this.openAiService.createChatCompletion(
+        [
+          ...openAiMessages,
+          {
+            role: 'user',
+            content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+          },
+        ],
+        { model },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate initial insights for test ${testId}:`,
+        error,
+      );
       throw new BadRequestException(
-        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        `Failed to generate initial insights: ${error.message}`,
       );
     }
 
-    // Format messages for OpenAI
-    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
-      // Concatenate all text blocks in content
-      const content = msg.content.map((block) => block.value).join('\n\n');
+    // Second call: Edit and fact-check the insights
+    let editedInsights: string;
+    try {
+      const {
+        config: { provider: editorProvider, model: editorModel },
+        messages: editorMessages,
+      } = await this.adalineService.getPromptDeployment(
+        undefined,
+        '0e1ad14a-b33b-4068-9924-201a6913eb59',
+      );
 
+      if (editorProvider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${editorProvider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format editor messages for OpenAI
+      const editorOpenAiMessages = editorMessages.map<ChatCompletionMessageParam>((msg) => {
+        // Replace {data} placeholder with the initial insights and test data
+        const content = msg.content
+          .map((block) => {
+            if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
+              return block.value.replace(
+                '{data}',
+                `Initial Analysis:\n\n${unformattedInsights}\n\n///DATA///\n\n${JSON.stringify(formattedData, null, 2)}`
+              );
+            }
+            return block && typeof block.value === 'string' ? block.value : '';
+          })
+          .join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      editedInsights = await this.openAiService.createChatCompletion(
+        editorOpenAiMessages,
+        { model: editorModel },
+      );
+
+      this.logger.log(`Editor prompt response for test ${testId}: ${editedInsights.substring(0, 500)}...`);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to edit insights for test ${testId}, using original insights:`,
+        error,
+      );
+      // Fallback to original insights if editing fails
+      editedInsights = unformattedInsights;
+    }
+
+    try {
       return {
-        role: msg.role,
-        content,
-      } as ChatCompletionMessageParam;
-    });
-
-    const unformattedInsights = await this.openAiService.createChatCompletion(
-      [
-        ...openAiMessages,
-        {
-          role: 'user',
-          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
-        },
-      ],
-      { model },
-    );
-
-    return {
-      ...insightsFormatter(unformattedInsights),
-      comment_summary: commentSummary,
-    };
+        ...insightsFormatter(editedInsights),
+        comment_summary: commentSummary,
+      };
+    } catch (formatError) {
+      this.logger.error(
+        `Failed to format insights for test ${testId}:`,
+        formatError,
+      );
+      this.logger.error(`Raw insights text: ${editedInsights.substring(0, 1000)}`);
+      
+      // Fallback to a basic format if the formatter fails
+      return {
+        comparison_between_variants: editedInsights,
+        purchase_drivers: '',
+        competitive_insights: '',
+        recommendations: '',
+        comment_summary: commentSummary,
+      };
+    }
   }
 
   private async calculateShareOfClicks(
