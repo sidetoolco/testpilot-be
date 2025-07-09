@@ -279,7 +279,7 @@ export class ProlificService {
     }
 
     // Check if we have enough balance
-    if (balance.available_balance > totalRequiredBalance) {
+    if (balance.available_balance < totalRequiredBalance) {
       const shortfall = totalRequiredBalance - balance.available_balance;
       throw new BadRequestException(
         `Insufficient balance. Required: ${(totalRequiredBalance / 100).toFixed(2)} ${balance.currency_code}, Available: ${(balance.available_balance / 100).toFixed(2)} ${balance.currency_code}, Shortfall: ${(shortfall / 100).toFixed(2)} ${balance.currency_code}`,
