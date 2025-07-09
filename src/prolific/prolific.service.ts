@@ -210,12 +210,27 @@ export class ProlificService {
 
   public async publishStudy(studyId: string) {
     try {
+      // First check if study exists and get current status
+      const study = await this.getStudy(studyId);
+      
+      if (!study) {
+        throw new BadRequestException(`Test ${studyId} not found`);
+      }
+
       await this.httpClient.post(`/studies/${studyId}/transition/`, {
         action: 'PUBLISH',
       });
     } catch (error) {
-      this.logger.error(`Failed to publish study ${studyId}:`, error);
-      throw error;
+      this.logger.error(`Failed to publish test ${studyId}:`, error);
+      
+      // Provide more specific error messages
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new BadRequestException(
+        `Failed to publish Test ${studyId}: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
