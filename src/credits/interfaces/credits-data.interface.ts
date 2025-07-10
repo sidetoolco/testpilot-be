@@ -1,7 +1,7 @@
 import { Transaction } from "./transaction.interface";
 
 export interface CreditsData {
-    balance: number;
+    total: number;
     transactions: {
         data: Transaction[];
         total: number;

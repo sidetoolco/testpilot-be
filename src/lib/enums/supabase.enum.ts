@@ -24,6 +24,5 @@ export enum TableName {
 
 export enum Rpc {
   GET_COMPETITOR_INSIGHTS = 'get_competitive_insights_by_competitor',
-  GET_COMPANY_BALANCE = 'get_company_balance',
   GET_COMPANY_TRANSACTION_HISTORY = 'get_company_transaction_history',
 }

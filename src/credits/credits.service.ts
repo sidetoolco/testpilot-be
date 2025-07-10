@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
 import { CreditsData, Transaction } from './interfaces';
-import { Rpc } from 'lib/enums';
+import { Rpc, TableName } from 'lib/enums';
 
 @Injectable()
 export class CreditsService {
@@ -18,10 +18,14 @@ export class CreditsService {
     limit = 20,
   ): Promise<CreditsData> {
     try {
-      const [balance, result] = await Promise.all([
-        this.supabaseService.rpc<number>(Rpc.GET_COMPANY_BALANCE, {
-          p_company_id: companyId,
-        }),
+      const [total, result] = await Promise.all([
+        this.supabaseService.findOne<number>(
+          TableName.COMPANY_CREDITS,
+          {
+            company_id: companyId,
+          },
+          'total',
+        ),
         this.supabaseService.rpc<{
           transactions: Transaction[];
           count: number;
@@ -33,14 +37,14 @@ export class CreditsService {
       ]);
 
       const transactions = result?.transactions ?? [];
-      const total = result?.count ?? 0;
-      const totalPages = Math.ceil(total / limit);
+      const totalResults = result?.count ?? 0;
+      const totalPages = Math.ceil(totalResults / limit);
 
       return {
-        balance: balance || 0,
+        total: total || 0,
         transactions: {
           data: transactions,
-          total,
+          total: totalResults,
           page,
           limit,
           totalPages,

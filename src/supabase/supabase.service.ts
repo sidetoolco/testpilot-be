@@ -150,6 +150,7 @@ export class SupabaseService {
   public async findOne<T>(
     tableName: TableName,
     conditions: Record<string, any>,
+    select = '*'
   ): Promise<T | null> {
     let query = this.client.from(tableName).select('*');
 
