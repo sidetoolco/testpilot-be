@@ -82,7 +82,10 @@ export class SupabaseService {
     return result as T | null;
   }
 
-  public async rpc(functionName: Rpc, params?: Record<string, any>) {
+  public async rpc<T>(
+    functionName: Rpc,
+    params?: Record<string, any>,
+  ): Promise<T> {
     const { data, error } = await this.client.rpc(functionName, params);
 
     if (error) throw error;
