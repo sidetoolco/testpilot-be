@@ -152,7 +152,7 @@ export class SupabaseService {
     conditions: Record<string, any>,
     select = '*'
   ): Promise<T | null> {
-    let query = this.client.from(tableName).select('*');
+    let query = this.client.from(tableName).select(select);
 
     for (const [key, value] of Object.entries(conditions)) {
       query = query.eq(key, value);
