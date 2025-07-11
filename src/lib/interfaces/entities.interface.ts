@@ -141,3 +141,11 @@ export interface Invite {
   token: string;
   expires_at: string;
 }
+
+export interface CompanyCredits {
+  id: string;
+  company_id: string;
+  balance: number;
+  created_at: string;
+  updated_at: string;
+}
