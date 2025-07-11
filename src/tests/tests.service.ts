@@ -169,9 +169,6 @@ export class TestsService {
   }
 
   public async publishTest(testId: string) {
-    // Update test status to "in progress"
-    await this.updateTestStatus(testId, 'in progress');
-
     const testVariations = await this.getTestVariations(testId);
 
     // Check balance before publishing any studies

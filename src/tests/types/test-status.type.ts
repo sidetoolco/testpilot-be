@@ -1,1 +1,1 @@
-export type TestStatus = 'draft' | 'complete' | 'active' | 'needs review' | 'in progress';
+export type TestStatus = 'draft' | 'complete' | 'active' | 'needs review';
