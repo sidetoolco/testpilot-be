@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TestMonitoringService } from './test-monitoring.service';
 import { BullModule } from '@nestjs/bullmq';
 import { ProlificModule } from 'prolific/prolific.module';
@@ -13,7 +13,7 @@ import { TestsModule } from 'tests/tests.module';
     }),
     ProlificModule,
     EmailModule,
-    TestsModule
+    forwardRef(() => TestsModule)
   ],
   providers: [TestMonitoringService, TestMonitoringProcessor],
   exports: [TestMonitoringService],
