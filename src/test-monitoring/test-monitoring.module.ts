@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ProlificModule } from 'prolific/prolific.module';
 import { TestMonitoringProcessor } from './test-monitoring.processor';
 import { EmailModule } from 'email/email.module';
+import { TestsModule } from 'tests/tests.module';
 
 @Module({
   imports: [
@@ -11,7 +12,8 @@ import { EmailModule } from 'email/email.module';
       name: 'test-completion',
     }),
     ProlificModule,
-    EmailModule
+    EmailModule,
+    TestsModule
   ],
   providers: [TestMonitoringService, TestMonitoringProcessor],
   exports: [TestMonitoringService],
