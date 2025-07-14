@@ -13,6 +13,12 @@ export class InsightsController {
     return this.insightsService.getInsightsData(testId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('/:testId/ai-insights')
+  getAiInsights(@Param('testId') testId: string) {
+    return this.insightsService.getAiInsights(testId);
+  }
+
   @Post()
   generateStudyInsights(@Body() dto: GenerateStudyInsightsDto) {
     return this.insightsService.generateStudyInsights(dto.studyId);

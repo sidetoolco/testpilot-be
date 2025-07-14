@@ -51,17 +51,37 @@ export class InsightsService {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
-      const aiInsights = await this.generateAiInsights(testId, objective);
-
-      this.logger.log(`Saving AI insights for test ${testId}`);
-      return await this.supabaseService.upsert<AiInsight>(
-        TableName.AI_INSIGHTS,
-        {
-          test_id: testId,
-          ...aiInsights,
-        },
-        'test_id',
-      );
+      const testVariations = await this.testsService.getTestVariations(testId);
+      
+      const results = [];
+      
+      // Generate AI insights for each variant
+      for (const variation of testVariations) {
+        try {
+          this.logger.log(`Generating AI insights for variant ${variation.variation_type}`);
+          const aiInsights = await this.generateAiInsightsForVariant(testId, objective, variation.variation_type);
+          
+          const savedInsight = await this.supabaseService.upsert<AiInsight>(
+            TableName.AI_INSIGHTS,
+            {
+              test_id: testId,
+              variant_type: variation.variation_type,
+              ...aiInsights,
+            },
+            'test_id,variant_type',
+          );
+          
+          results.push(savedInsight);
+        } catch (error) {
+          this.logger.error(
+            `Failed to generate AI insights for variant ${variation.variation_type}:`,
+            error,
+          );
+          // Continue with other variants even if one fails
+        }
+      }
+      
+      return results;
     } catch (error) {
       this.logger.error(
         `Failed to generate AI insights for test ${testId}:`,
@@ -481,6 +501,105 @@ export class InsightsService {
     };
   }
 
+  public async getAiInsights(testId: string) {
+    try {
+      this.logger.log(`Retrieving AI insights for test ${testId}`);
+      
+      const aiInsights = await this.supabaseService.findMany<AiInsight>(
+        TableName.AI_INSIGHTS,
+        { test_id: testId },
+      );
+
+      return aiInsights;
+    } catch (error) {
+      this.logger.error(
+        `Failed to retrieve AI insights for test ${testId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  private async getInsightsDataForVariant(testId: string, variantType: string) {
+    const test = await this.testsService.getRawDataByTestId(testId);
+    const demographics = await this.testsService.getTestDemographics(testId);
+    const variantSummaries = await this.testsService.getTestSummaries(testId);
+    const competitorsInsights =
+      await this.testsService.getCompetitorInsights(testId);
+
+    // Get the specific variant data
+    const variantInfo = test.variations[variantType];
+    if (!variantInfo) {
+      throw new NotFoundException(`Variant ${variantType} not found for test ${testId}`);
+    }
+
+    const variantSummary = variantSummaries.find(
+      ({ variant_type }) => variant_type === variantType,
+    );
+
+    // Filter competitor insights to only show data for the current variant
+    const filteredCompetitorsInsights = Object.values(competitorsInsights).map(
+      (insights) => ({
+        name: insights.title,
+        price: insights.price,
+        // Only include data for the current variant
+        current_variant_performance: insights.variants[variantType] || null,
+      }),
+    );
+
+    return {
+      test_metadata: {
+        test_id: test.id,
+        objective: test.objective,
+        test_type: 'Variant-Based',
+        sample_size: demographics.tester_count,
+        created_date: test.createdAt,
+        search_term: test.searchTerm,
+        current_variant: variantType.toUpperCase(),
+        analysis_note: `This analysis focuses exclusively on Variant ${variantType.toUpperCase()} (${variantInfo.title} at $${variantInfo.price}). Do not compare to other variants.`,
+      },
+      audience: {
+        demographics: {
+          age_ranges: demographics.age_ranges,
+          gender: demographics.genders,
+          location: demographics.locations,
+        },
+      },
+      current_variant: {
+        id: variantType,
+        title: variantInfo.title,
+        price: variantInfo.price,
+        click_share: variantSummary?.share_of_click,
+        buy_share: variantSummary?.share_of_buy,
+        value_score: variantSummary?.value_score,
+      },
+      // Include all variants for context but clearly mark the current one
+      all_variants: Object.entries(test.variations).reduce(
+        (acc, [variantName, variantInfo]) => {
+          if (variantInfo) {
+            const variantSummary = variantSummaries.find(
+              ({ variant_type }) => variant_type === variantName,
+            );
+            acc.push({
+              id: variantName,
+              title: variantInfo.title,
+              price: variantInfo.price,
+              click_share: variantSummary?.share_of_click,
+              buy_share: variantSummary?.share_of_buy,
+              value_score: variantSummary?.value_score,
+              is_current_variant: variantName === variantType,
+            });
+          }
+
+          return acc;
+        },
+        [],
+      ),
+      // Only include competitor data for the current variant
+      competitors_detailed: filteredCompetitorsInsights,
+    };
+  }
+
   private saveInsightStatus(testId: string, variantType: string) {
     return this.supabaseService.insert(TableName.INSIGHT_STATUS, {
       test_id: testId,
@@ -601,6 +720,91 @@ export class InsightsService {
     };
   }
 
+  private async generateAiInsightsForVariant(
+    testId: string,
+    testObjective: TestObjective,
+    variantType: string,
+  ) {
+    const formattedData = await this.getInsightsDataForVariant(testId, variantType);
+
+    // Generate comment summary for this specific variant
+    let commentSummary: string | null = null;
+
+    try {
+      commentSummary = await this.generateCommentSummaryForVariant(testId, variantType);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        error,
+      );
+    }
+
+    const {
+      config: { provider, model },
+      messages,
+    } = await this.adalineService.getPromptDeployment(testObjective);
+
+    if (provider !== 'openai') {
+      throw new BadRequestException(
+        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+      );
+    }
+
+    // Format messages for OpenAI with variant-specific instructions
+    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+      // Concatenate all text blocks in content
+      let content = msg.content.map((block) => block.value).join('\n\n');
+      
+      // Add variant-specific instructions to the prompt
+      if (msg.role === 'system' || msg.role === 'user') {
+        content += `\n\nIMPORTANT VARIANT-SPECIFIC INSTRUCTIONS:
+- You are analyzing ONLY Variant ${variantType.toUpperCase()} (${formattedData.current_variant.title} at $${formattedData.current_variant.price})
+- Focus your analysis exclusively on this variant's performance
+- In RESULTS OVERVIEW: Only discuss Variant ${variantType.toUpperCase()}, not other variants
+- In PURCHASE DRIVERS: Only analyze Variant ${variantType.toUpperCase()}'s drivers
+- In COMPETITIVE INSIGHTS: Only analyze how Variant ${variantType.toUpperCase()} performed against competitors, not against other variants
+- Do NOT compare Variant ${variantType.toUpperCase()} to other variants in your analysis
+- Do NOT mention other variants unless absolutely necessary for context
+
+COMPETITIVE INSIGHTS SECTION SPECIFIC INSTRUCTIONS:
+- Analyze ONLY how Variant ${variantType.toUpperCase()} performed against each competitor
+- Use the 'current_variant_performance' data for each competitor
+- Do NOT compare Variant ${variantType.toUpperCase()} to other variants (A, B, C, etc.)
+- Focus on why Variant ${variantType.toUpperCase()} won or lost against each competitor
+- Attribute scores show how Variant ${variantType.toUpperCase()} performed relative to each competitor
+- Always start the competitive insights section with "Variant ${variantType.toUpperCase()}: " (with colon and space)
+
+EXAMPLE COMPETITIVE INSIGHTS FOR VARIANT ${variantType.toUpperCase()}:
+"Variant ${variantType.toUpperCase()}: At $${formattedData.current_variant.price}, this variant beat value scores for most competitive items. However, aesthetics remain a challenge - on average, our item scored below competition on brand look. The variant showed strong utility performance against Brand X but struggled with trust scores against Brand Y."`;
+      }
+
+      return {
+        role: msg.role,
+        content,
+      } as ChatCompletionMessageParam;
+    });
+
+    const unformattedInsights = await this.openAiService.createChatCompletion(
+      [
+        ...openAiMessages,
+        {
+          role: 'user',
+          content: `IMPORTANT: You are analyzing ONLY Variant ${variantType.toUpperCase()} (${formattedData.current_variant.title} at $${formattedData.current_variant.price}). 
+
+Do NOT compare this variant to other variants (A, B, C, etc.). Focus exclusively on how Variant ${variantType.toUpperCase()} performed against competitors.
+
+Here is the test data to analyze for Variant ${variantType.toUpperCase()} ONLY:\n\n${JSON.stringify(formattedData)}`,
+        },
+      ],
+      { model },
+    );
+
+    return {
+      ...insightsFormatter(unformattedInsights),
+      comment_summary: commentSummary,
+    };
+  }
+
   private async calculateShareOfClicks(
     testId: string,
     variantProductId: string,
@@ -679,6 +883,67 @@ export class InsightsService {
     }
   }
 
+  private async generateCommentSummaryForVariant(testId: string, variantType: string) {
+    try {
+      this.logger.log(`Generating comment summary for variant ${variantType} in test ${testId}`);
+
+      // Format survey responses for this specific variant
+      const variantData = await this.formatVariantSurveyResponses(testId, variantType);
+
+      // Get the Adaline prompt deployment
+      const {
+        config: { provider, model },
+        messages,
+      } = await this.adalineService.getPromptDeployment(
+        undefined,
+        '225e999e-3bba-4ca5-99a1-34805f9c8ac7',
+      );
+
+      if (provider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format messages for OpenAI
+      const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+        // Replace {data} placeholder with variant-specific data
+        const content = msg.content
+          .map((block) => {
+            if (block.value.includes('{data}')) {
+              return block.value.replace(
+                '{data}',
+                JSON.stringify({ [`Variant ${variantType.toUpperCase()}`]: variantData }, null, 2),
+              );
+            }
+
+            return block.value;
+          })
+          .join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      // Generate the summary using OpenAI for this specific variant
+      const summary = await this.openAiService.createChatCompletion(
+        openAiMessages,
+        { model },
+      );
+
+      return summary;
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        error,
+      );
+
+      throw error;
+    }
+  }
+
   private async formatAllVariantsSurveyResponses(testId: string) {
     // Get all test variations
     const testVariations = await this.testsService.getTestVariations(testId);
@@ -713,5 +978,37 @@ export class InsightsService {
     }
 
     return variantsData;
+  }
+
+  private async formatVariantSurveyResponses(testId: string, variantType: string) {
+    // Get the specific test variation
+    const testVariations = await this.testsService.getTestVariations(testId);
+    const variation = testVariations.find(v => v.variation_type === variantType);
+    
+    if (!variation) {
+      throw new NotFoundException(`Variant ${variantType} not found for test ${testId}`);
+    }
+
+    // Get survey responses for this variant
+    const surveyResponses = await this.productsService.getProductSurveys(
+      variation.product_id,
+      testId,
+    );
+
+    // Get comparison responses
+    const comparisonResponses =
+      await this.supabaseService.findMany<ResponseComparison>(
+        TableName.RESPONSES_COMPARISONS,
+        {
+          test_id: testId,
+          product_id: variation.product_id,
+        },
+      );
+
+    // Format responses for this variant
+    return surveyResponsesForSummaryFormatter(
+      surveyResponses,
+      comparisonResponses,
+    );
   }
 }

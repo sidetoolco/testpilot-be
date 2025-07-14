@@ -113,9 +113,12 @@ export interface AiInsight {
   id: number;
   created_at: string;
   test_id: string;
+  variant_type: string;
   comparison_between_variants: string;
   purchase_drivers: string;
+  competitive_insights: string;
   recommendations: string;
+  comment_summary?: string;
   sendEmail?: boolean;
 }
 
