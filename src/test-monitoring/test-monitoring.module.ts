@@ -15,7 +15,7 @@ import { EmailModule } from 'email/email.module';
         attempts: 2,
         backoff: {
           type: 'exponential',
-          delay: 1000 * 60 * 60, // 1 hour
+          delay: 1000 * 60, // 1 minute
         },
       },
     }),

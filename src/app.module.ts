@@ -62,7 +62,7 @@ import { CreditsModule } from './credits/credits.module';
             attempts: 2,
             backoff: {
               type: 'exponential',
-              delay: 1000 * 60 * 60,
+              delay: 1000 * 60, // 1 minute instead of 1 hour
             },
           },
         };
