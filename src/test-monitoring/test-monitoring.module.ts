@@ -18,12 +18,6 @@ import { EmailModule } from 'email/email.module';
           delay: 1000 * 60 * 60, // 1 hour
         },
       },
-      settings: {
-        stalledInterval: 30000,
-        maxStalledCount: 1,
-        guardInterval: 5000,
-        retryProcessDelay: 5000,
-      },
     }),
     ProlificModule,
     EmailModule

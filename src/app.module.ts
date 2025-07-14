@@ -42,17 +42,19 @@ import { CreditsModule } from './credits/credits.module';
             enableReadyCheck: false,
             enableOfflineQueue: false,
             retryStrategy: (times: number) => {
-              if (times > 5) return null;
-              return Math.pow(2, times) * 100;
+              if (times > 10) return null;
+              return Math.min(times * 1000, 30000);
             },
-            maxRetriesPerRequest: 1,
+            maxRetriesPerRequest: null,
             lazyConnect: true,
             keepAlive: 30000,
-            connectTimeout: 10000,
-            commandTimeout: 5000,
-            disconnectTimeout: 2000,
+            connectTimeout: 30000,
+            commandTimeout: 10000,
+            disconnectTimeout: 5000,
             enableAutoPipelining: true,
-            maxLoadingTimeout: 10000,
+            maxLoadingTimeout: 30000,
+            retryDelayOnFailover: 100,
+            retryDelayOnClusterDown: 300,
           },
           defaultJobOptions: {
             removeOnComplete: 5,
