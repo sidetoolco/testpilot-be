@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, Query } from '@nestjs/common';
 import { InsightsService } from './insights.service';
 import { JwtAuthGuard } from 'auth/guards/auth.guard';
 import { GenerateStudyInsightsDto } from './dto';
@@ -9,14 +9,14 @@ export class InsightsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('/:testId')
-  getInsightsDataFromTest(@Param('testId') testId: string) {
+  getInsightsDataFromTest(
+    @Param('testId') testId: string,
+    @Query('type') type?: string,
+  ) {
+    if (type === 'ai-insights') {
+      return this.insightsService.getAiInsights(testId);
+    }
     return this.insightsService.getInsightsData(testId);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('/:testId/ai-insights')
-  getAiInsights(@Param('testId') testId: string) {
-    return this.insightsService.getAiInsights(testId);
   }
 
   @Post()

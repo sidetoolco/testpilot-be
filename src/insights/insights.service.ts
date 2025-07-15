@@ -8,6 +8,7 @@ import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
 import {
   AiInsight,
+  AiInsightsResult,
   Event,
   ResponseComparison,
   ResponseSurvey,
@@ -47,13 +48,16 @@ export class InsightsService {
     private readonly adalineService: AdalineService,
   ) {}
 
-  public async saveAiInsights(testId: string) {
+  public async saveAiInsights(testId: string): Promise<AiInsightsResult> {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
       const testVariations = await this.testsService.getTestVariations(testId);
 
       const results = [];
+      const errors = [];
+      const successfulVariants = [];
+      const failedVariants = [];
 
       // Generate AI insights for each variant
       for (const variation of testVariations) {
@@ -78,16 +82,34 @@ export class InsightsService {
           );
 
           results.push(savedInsight);
+          successfulVariants.push(variation.variation_type);
         } catch (error) {
           this.logger.error(
             `Failed to generate AI insights for variant ${variation.variation_type}:`,
             error,
           );
+          errors.push({
+            variant: variation.variation_type,
+            error: error.message || 'Unknown error',
+          });
+          failedVariants.push(variation.variation_type);
           // Continue with other variants even if one fails
         }
       }
 
-      return results;
+      // Return a single object with consistent structure
+      return {
+        testId,
+        totalVariants: testVariations.length,
+        successfulVariants,
+        failedVariants,
+        insights: results,
+        errors: errors.length > 0 ? errors : undefined,
+        success: errors.length === 0,
+        message: errors.length === 0 
+          ? `Successfully generated AI insights for all ${testVariations.length} variants`
+          : `Generated AI insights for ${successfulVariants.length}/${testVariations.length} variants. ${failedVariants.length} variants failed.`,
+      };
     } catch (error) {
       this.logger.error(
         `Failed to generate AI insights for test ${testId}:`,

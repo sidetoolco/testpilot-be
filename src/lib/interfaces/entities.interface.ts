@@ -122,6 +122,20 @@ export interface AiInsight {
   sendEmail?: boolean;
 }
 
+export interface AiInsightsResult {
+  testId: string;
+  totalVariants: number;
+  successfulVariants: string[];
+  failedVariants: string[];
+  insights: AiInsight[];
+  errors?: Array<{
+    variant: string;
+    error: string;
+  }>;
+  success: boolean;
+  message: string;
+}
+
 export interface Test {
   id: string;
   name: string;
