@@ -8,7 +8,6 @@ import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
 import {
   AiInsight,
-  CompetitiveInsight,
   Event,
   ResponseComparison,
   ResponseSurvey,
@@ -247,19 +246,13 @@ export class InsightsService {
         throw new NotFoundException('Test competitors not found');
       }
 
-      // Calculate variant-specific shopper count based on comparison responses
-      const variantShopperCount = this.calculateVariantShopperCount(
-        competitorsComparison,
-        shopperCount,
-      );
-
       const groupedData = this.groupCompetitorMetrics(competitorsComparison);
       const results = this.calculateCompetitorResults(
         testCompetitors,
         groupedData,
         variation,
         testId,
-        variantShopperCount,
+        shopperCount,
       );
 
       // ['test_id', 'variant_type', 'competitor_product_id'] agrupar por test_id, variant_type, competitor_product_id
@@ -322,7 +315,7 @@ export class InsightsService {
     groupedData: Record<string, any>,
     variation: TestVariation,
     testId: string,
-    variantShopperCount: number,
+    shopperCount: number,
   ) {
     return competitors.map((competitor) => {
       const metrics = groupedData[competitor.id] ||
@@ -357,7 +350,7 @@ export class InsightsService {
         value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(
           1,
         ),
-        share_of_buy: ((count / variantShopperCount) * 100).toFixed(1),
+        share_of_buy: ((count / shopperCount) * 100).toFixed(1),
         count,
       };
     });
@@ -365,39 +358,6 @@ export class InsightsService {
 
   private calculateAverage(sum: number, count: number): number {
     return count > 0 ? Number((sum / count).toFixed(1)) : 0;
-  }
-
-  private calculateVariantShopperCount(
-    comparisons: any[],
-    totalShopperCount: number,
-  ): number {
-    // Count unique testers who participated in this variant's comparison
-    const uniqueTesters = new Set();
-
-    comparisons.forEach((comparison) => {
-      if (comparison.tester_id) {
-        uniqueTesters.add(comparison.tester_id);
-      }
-    });
-
-    // If we have comparison data with tester IDs, use the actual count
-    if (uniqueTesters.size > 0) {
-      return uniqueTesters.size;
-    }
-
-    // Fallback: estimate based on total comparisons vs expected
-    // This assumes each tester makes one comparison per competitor
-    const totalComparisons = comparisons.length;
-    const competitorCount = new Set(
-      comparisons.map((c) => c.competitor_id || c.competitor_product_id),
-    ).size;
-
-    if (competitorCount > 0) {
-      return Math.round(totalComparisons / competitorCount);
-    }
-
-    // Final fallback: use total shopper count (original behavior)
-    return totalShopperCount;
   }
 
   async purchaseDrivers(testId: string, variant: string) {
@@ -493,9 +453,8 @@ export class InsightsService {
     const test = await this.testsService.getRawDataByTestId(testId);
     const demographics = await this.testsService.getTestDemographics(testId);
     const variantSummaries = await this.testsService.getTestSummaries(testId);
-    
-    // Get competitive insights filtered by variant
-    const competitorsInsights = await this.getCompetitiveInsightsByVariant(testId);
+    const competitorsInsights =
+      await this.testsService.getCompetitorInsights(testId);
 
     return {
       test_metadata: {
@@ -548,67 +507,6 @@ export class InsightsService {
     };
   }
 
-  /**
-   * Get competitive insights filtered by variant type to ensure share of buy percentages
-   * are calculated per variant, not across all variants
-   */
-  private async getCompetitiveInsightsByVariant(testId: string) {
-    try {
-      // Get all competitive insights for this test
-      const allCompetitiveInsights = await this.supabaseService.findMany<CompetitiveInsight>(
-        TableName.COMPETITIVE_INSIGHTS,
-        { test_id: testId },
-      );
-
-      // Get test competitors to get product information
-      const testCompetitors = await this.supabaseService.findMany(
-        TableName.TEST_COMPETITORS,
-        { test_id: testId },
-        `
-        *,
-        product:amazon_products ( title, image_url, price, rating, reviews_count )
-      `,
-      );
-
-      // Group insights by competitor product ID
-      const groupedInsights = allCompetitiveInsights.reduce((acc, insight) => {
-        const competitorId = insight.competitor_product_id;
-        
-        if (!acc[competitorId]) {
-          // Find competitor product info
-          const competitor = testCompetitors.find((tc: any) => tc.product_id === competitorId);
-          acc[competitorId] = {
-            title: (competitor as any)?.product?.title || 'Unknown Product',
-            price: (competitor as any)?.product?.price || 0,
-            variants: {},
-          };
-        }
-
-        // Add variant-specific data
-        if (insight.variant_type) {
-          acc[competitorId].variants[insight.variant_type] = {
-            share_of_buy: insight.share_of_buy,
-            value: insight.value,
-            aesthetics: insight.aesthetics,
-            utility: insight.utility,
-            trust: insight.trust,
-            convenience: insight.convenience,
-          };
-        }
-
-        return acc;
-      }, {} as Record<string, any>);
-
-      return groupedInsights;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get competitive insights by variant for test ${testId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
-
   public async getAiInsights(testId: string) {
     try {
       this.logger.log(`Retrieving AI insights for test ${testId}`);
@@ -632,9 +530,8 @@ export class InsightsService {
     const test = await this.testsService.getRawDataByTestId(testId);
     const demographics = await this.testsService.getTestDemographics(testId);
     const variantSummaries = await this.testsService.getTestSummaries(testId);
-    
-    // Get competitive insights filtered by variant
-    const competitorsInsights = await this.getCompetitiveInsightsByVariant(testId);
+    const competitorsInsights =
+      await this.testsService.getCompetitorInsights(testId);
 
     // Get the specific variant data
     const variantInfo = test.variations[variantType];
