@@ -52,15 +52,21 @@ export class InsightsService {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
       const testVariations = await this.testsService.getTestVariations(testId);
-      
+
       const results = [];
-      
+
       // Generate AI insights for each variant
       for (const variation of testVariations) {
         try {
-          this.logger.log(`Generating AI insights for variant ${variation.variation_type}`);
-          const aiInsights = await this.generateAiInsightsForVariant(testId, objective, variation.variation_type);
-          
+          this.logger.log(
+            `Generating AI insights for variant ${variation.variation_type}`,
+          );
+          const aiInsights = await this.generateAiInsightsForVariant(
+            testId,
+            objective,
+            variation.variation_type,
+          );
+
           const savedInsight = await this.supabaseService.upsert<AiInsight>(
             TableName.AI_INSIGHTS,
             {
@@ -70,7 +76,7 @@ export class InsightsService {
             },
             'test_id,variant_type',
           );
-          
+
           results.push(savedInsight);
         } catch (error) {
           this.logger.error(
@@ -80,7 +86,7 @@ export class InsightsService {
           // Continue with other variants even if one fails
         }
       }
-      
+
       return results;
     } catch (error) {
       this.logger.error(
@@ -504,7 +510,7 @@ export class InsightsService {
   public async getAiInsights(testId: string) {
     try {
       this.logger.log(`Retrieving AI insights for test ${testId}`);
-      
+
       const aiInsights = await this.supabaseService.findMany<AiInsight>(
         TableName.AI_INSIGHTS,
         { test_id: testId },
@@ -530,7 +536,9 @@ export class InsightsService {
     // Get the specific variant data
     const variantInfo = test.variations[variantType];
     if (!variantInfo) {
-      throw new NotFoundException(`Variant ${variantType} not found for test ${testId}`);
+      throw new NotFoundException(
+        `Variant ${variantType} not found for test ${testId}`,
+      );
     }
 
     const variantSummary = variantSummaries.find(
@@ -725,13 +733,19 @@ export class InsightsService {
     testObjective: TestObjective,
     variantType: string,
   ) {
-    const formattedData = await this.getInsightsDataForVariant(testId, variantType);
+    const formattedData = await this.getInsightsDataForVariant(
+      testId,
+      variantType,
+    );
 
     // Generate comment summary for this specific variant
     let commentSummary: string | null = null;
 
     try {
-      commentSummary = await this.generateCommentSummaryForVariant(testId, variantType);
+      commentSummary = await this.generateCommentSummaryForVariant(
+        testId,
+        variantType,
+      );
     } catch (error) {
       this.logger.warn(
         `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
@@ -750,33 +764,10 @@ export class InsightsService {
       );
     }
 
-    // Format messages for OpenAI with variant-specific instructions
+    // Format messages for OpenAI
     const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
       // Concatenate all text blocks in content
-      let content = msg.content.map((block) => block.value).join('\n\n');
-      
-      // Add variant-specific instructions to the prompt
-      if (msg.role === 'system' || msg.role === 'user') {
-        content += `\n\nIMPORTANT VARIANT-SPECIFIC INSTRUCTIONS:
-- You are analyzing ONLY Variant ${variantType.toUpperCase()} (${formattedData.current_variant.title} at $${formattedData.current_variant.price})
-- Focus your analysis exclusively on this variant's performance
-- In RESULTS OVERVIEW: Only discuss Variant ${variantType.toUpperCase()}, not other variants
-- In PURCHASE DRIVERS: Only analyze Variant ${variantType.toUpperCase()}'s drivers
-- In COMPETITIVE INSIGHTS: Only analyze how Variant ${variantType.toUpperCase()} performed against competitors, not against other variants
-- Do NOT compare Variant ${variantType.toUpperCase()} to other variants in your analysis
-- Do NOT mention other variants unless absolutely necessary for context
-
-COMPETITIVE INSIGHTS SECTION SPECIFIC INSTRUCTIONS:
-- Analyze ONLY how Variant ${variantType.toUpperCase()} performed against each competitor
-- Use the 'current_variant_performance' data for each competitor
-- Do NOT compare Variant ${variantType.toUpperCase()} to other variants (A, B, C, etc.)
-- Focus on why Variant ${variantType.toUpperCase()} won or lost against each competitor
-- Attribute scores show how Variant ${variantType.toUpperCase()} performed relative to each competitor
-- Always start the competitive insights section with "Variant ${variantType.toUpperCase()}: " (with colon and space)
-
-EXAMPLE COMPETITIVE INSIGHTS FOR VARIANT ${variantType.toUpperCase()}:
-"Variant ${variantType.toUpperCase()}: At $${formattedData.current_variant.price}, this variant beat value scores for most competitive items. However, aesthetics remain a challenge - on average, our item scored below competition on brand look. The variant showed strong utility performance against Brand X but struggled with trust scores against Brand Y."`;
-      }
+      const content = msg.content.map((block) => block.value).join('\n\n');
 
       return {
         role: msg.role,
@@ -789,11 +780,7 @@ EXAMPLE COMPETITIVE INSIGHTS FOR VARIANT ${variantType.toUpperCase()}:
         ...openAiMessages,
         {
           role: 'user',
-          content: `IMPORTANT: You are analyzing ONLY Variant ${variantType.toUpperCase()} (${formattedData.current_variant.title} at $${formattedData.current_variant.price}). 
-
-Do NOT compare this variant to other variants (A, B, C, etc.). Focus exclusively on how Variant ${variantType.toUpperCase()} performed against competitors.
-
-Here is the test data to analyze for Variant ${variantType.toUpperCase()} ONLY:\n\n${JSON.stringify(formattedData)}`,
+          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
         },
       ],
       { model },
@@ -883,12 +870,20 @@ Here is the test data to analyze for Variant ${variantType.toUpperCase()} ONLY:\
     }
   }
 
-  private async generateCommentSummaryForVariant(testId: string, variantType: string) {
+  private async generateCommentSummaryForVariant(
+    testId: string,
+    variantType: string,
+  ) {
     try {
-      this.logger.log(`Generating comment summary for variant ${variantType} in test ${testId}`);
+      this.logger.log(
+        `Generating comment summary for variant ${variantType} in test ${testId}`,
+      );
 
       // Format survey responses for this specific variant
-      const variantData = await this.formatVariantSurveyResponses(testId, variantType);
+      const variantData = await this.formatVariantSurveyResponses(
+        testId,
+        variantType,
+      );
 
       // Get the Adaline prompt deployment
       const {
@@ -913,7 +908,11 @@ Here is the test data to analyze for Variant ${variantType.toUpperCase()} ONLY:\
             if (block.value.includes('{data}')) {
               return block.value.replace(
                 '{data}',
-                JSON.stringify({ [`Variant ${variantType.toUpperCase()}`]: variantData }, null, 2),
+                JSON.stringify(
+                  { [`Variant ${variantType.toUpperCase()}`]: variantData },
+                  null,
+                  2,
+                ),
               );
             }
 
@@ -980,13 +979,20 @@ Here is the test data to analyze for Variant ${variantType.toUpperCase()} ONLY:\
     return variantsData;
   }
 
-  private async formatVariantSurveyResponses(testId: string, variantType: string) {
+  private async formatVariantSurveyResponses(
+    testId: string,
+    variantType: string,
+  ) {
     // Get the specific test variation
     const testVariations = await this.testsService.getTestVariations(testId);
-    const variation = testVariations.find(v => v.variation_type === variantType);
-    
+    const variation = testVariations.find(
+      (v) => v.variation_type === variantType,
+    );
+
     if (!variation) {
-      throw new NotFoundException(`Variant ${variantType} not found for test ${testId}`);
+      throw new NotFoundException(
+        `Variant ${variantType} not found for test ${testId}`,
+      );
     }
 
     // Get survey responses for this variant
