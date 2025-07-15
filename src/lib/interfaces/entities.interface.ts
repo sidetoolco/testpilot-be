@@ -152,3 +152,18 @@ export interface CompanyCredits {
   created_at: string;
   updated_at: string;
 }
+
+export interface CompetitiveInsight {
+  id: number;
+  created_at: string;
+  variant_type: 'a' | 'b' | 'c';
+  competitor_product_id: string;
+  share_of_buy: number;
+  value: number;
+  aesthetics: number;
+  utility: number;
+  trust: number;
+  convenience: number;
+  test_id: string;
+  count: number;
+}
