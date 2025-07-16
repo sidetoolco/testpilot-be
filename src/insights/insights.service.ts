@@ -357,10 +357,10 @@ export class InsightsService {
           this.calculateAverage(metrics.averageConvenience, count) - 3
         ).toFixed(2),
         trust: (this.calculateAverage(metrics.averageBrand, count) - 3).toFixed(
-          1,
+          2,
         ),
         value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(
-          1,
+          2,
         ),
         share_of_buy: shareOfBuy,
         count,
