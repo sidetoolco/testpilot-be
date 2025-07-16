@@ -8,6 +8,7 @@ import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
 import {
   AiInsight,
+  CompetitiveInsight,
   Event,
   ResponseComparison,
   ResponseSurvey,
@@ -51,17 +52,43 @@ export class InsightsService {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
-      const aiInsights = await this.generateAiInsights(testId, objective);
+      const testVariations = await this.testsService.getTestVariations(testId);
 
-      this.logger.log(`Saving AI insights for test ${testId}`);
-      return await this.supabaseService.upsert<AiInsight>(
-        TableName.AI_INSIGHTS,
-        {
-          test_id: testId,
-          ...aiInsights,
-        },
-        'test_id',
-      );
+      const results = [];
+
+      // Generate AI insights for each variant
+      for (const variation of testVariations) {
+        try {
+          this.logger.log(
+            `Generating AI insights for variant ${variation.variation_type}`,
+          );
+          const aiInsights = await this.generateAiInsightsForVariant(
+            testId,
+            objective,
+            variation.variation_type,
+          );
+
+          const savedInsight = await this.supabaseService.upsert<AiInsight>(
+            TableName.AI_INSIGHTS,
+            {
+              test_id: testId,
+              variant_type: variation.variation_type,
+              ...aiInsights,
+            },
+            'test_id,variant_type',
+          );
+
+          results.push(savedInsight);
+        } catch (error) {
+          this.logger.error(
+            `Failed to generate AI insights for variant ${variation.variation_type}:`,
+            error,
+          );
+          // Continue with other variants even if one fails
+        }
+      }
+
+      return results;
     } catch (error) {
       this.logger.error(
         `Failed to generate AI insights for test ${testId}:`,
@@ -220,13 +247,19 @@ export class InsightsService {
         throw new NotFoundException('Test competitors not found');
       }
 
+      // Calculate variant-specific shopper count based on comparison responses
+      const variantShopperCount = this.calculateVariantShopperCount(
+        competitorsComparison,
+        shopperCount,
+      );
+
       const groupedData = this.groupCompetitorMetrics(competitorsComparison);
       const results = this.calculateCompetitorResults(
         testCompetitors,
         groupedData,
         variation,
         testId,
-        shopperCount,
+        variantShopperCount,
       );
 
       // ['test_id', 'variant_type', 'competitor_product_id'] agrupar por test_id, variant_type, competitor_product_id
@@ -289,7 +322,7 @@ export class InsightsService {
     groupedData: Record<string, any>,
     variation: TestVariation,
     testId: string,
-    shopperCount: number,
+    variantShopperCount: number,
   ) {
     return competitors.map((competitor) => {
       const metrics = groupedData[competitor.id] ||
@@ -324,7 +357,7 @@ export class InsightsService {
         value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(
           1,
         ),
-        share_of_buy: ((count / shopperCount) * 100).toFixed(1),
+        share_of_buy: ((count / variantShopperCount) * 100).toFixed(1),
         count,
       };
     });
@@ -332,6 +365,39 @@ export class InsightsService {
 
   private calculateAverage(sum: number, count: number): number {
     return count > 0 ? Number((sum / count).toFixed(1)) : 0;
+  }
+
+  private calculateVariantShopperCount(
+    comparisons: any[],
+    totalShopperCount: number,
+  ): number {
+    // Count unique testers who participated in this variant's comparison
+    const uniqueTesters = new Set();
+
+    comparisons.forEach((comparison) => {
+      if (comparison.tester_id) {
+        uniqueTesters.add(comparison.tester_id);
+      }
+    });
+
+    // If we have comparison data with tester IDs, use the actual count
+    if (uniqueTesters.size > 0) {
+      return uniqueTesters.size;
+    }
+
+    // Fallback: estimate based on total comparisons vs expected
+    // This assumes each tester makes one comparison per competitor
+    const totalComparisons = comparisons.length;
+    const competitorCount = new Set(
+      comparisons.map((c) => c.competitor_id || c.competitor_product_id),
+    ).size;
+
+    if (competitorCount > 0) {
+      return Math.round(totalComparisons / competitorCount);
+    }
+
+    // Final fallback: use total shopper count (original behavior)
+    return totalShopperCount;
   }
 
   async purchaseDrivers(testId: string, variant: string) {
@@ -427,8 +493,9 @@ export class InsightsService {
     const test = await this.testsService.getRawDataByTestId(testId);
     const demographics = await this.testsService.getTestDemographics(testId);
     const variantSummaries = await this.testsService.getTestSummaries(testId);
-    const competitorsInsights =
-      await this.testsService.getCompetitorInsights(testId);
+    
+    // Get competitive insights filtered by variant
+    const competitorsInsights = await this.getCompetitiveInsightsByVariant(testId);
 
     return {
       test_metadata: {
@@ -478,6 +545,169 @@ export class InsightsService {
           results_by_variant: insights.variants,
         }),
       ),
+    };
+  }
+
+  /**
+   * Get competitive insights filtered by variant type to ensure share of buy percentages
+   * are calculated per variant, not across all variants
+   */
+  private async getCompetitiveInsightsByVariant(testId: string) {
+    try {
+      // Get all competitive insights for this test
+      const allCompetitiveInsights = await this.supabaseService.findMany<CompetitiveInsight>(
+        TableName.COMPETITIVE_INSIGHTS,
+        { test_id: testId },
+      );
+
+      // Get test competitors to get product information
+      const testCompetitors = await this.supabaseService.findMany(
+        TableName.TEST_COMPETITORS,
+        { test_id: testId },
+        `
+        *,
+        product:amazon_products ( title, image_url, price, rating, reviews_count )
+      `,
+      );
+
+      // Group insights by competitor product ID
+      const groupedInsights = allCompetitiveInsights.reduce((acc, insight) => {
+        const competitorId = insight.competitor_product_id;
+        
+        if (!acc[competitorId]) {
+          // Find competitor product info
+          const competitor = testCompetitors.find((tc: any) => tc.product_id === competitorId);
+          acc[competitorId] = {
+            title: (competitor as any)?.product?.title || 'Unknown Product',
+            price: (competitor as any)?.product?.price || 0,
+            variants: {},
+          };
+        }
+
+        // Add variant-specific data
+        if (insight.variant_type) {
+          acc[competitorId].variants[insight.variant_type] = {
+            share_of_buy: insight.share_of_buy,
+            value: insight.value,
+            aesthetics: insight.aesthetics,
+            utility: insight.utility,
+            trust: insight.trust,
+            convenience: insight.convenience,
+          };
+        }
+
+        return acc;
+      }, {} as Record<string, any>);
+
+      return groupedInsights;
+    } catch (error) {
+      this.logger.error(
+        `Failed to get competitive insights by variant for test ${testId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  public async getAiInsights(testId: string) {
+    try {
+      this.logger.log(`Retrieving AI insights for test ${testId}`);
+
+      const aiInsights = await this.supabaseService.findMany<AiInsight>(
+        TableName.AI_INSIGHTS,
+        { test_id: testId },
+      );
+
+      return aiInsights;
+    } catch (error) {
+      this.logger.error(
+        `Failed to retrieve AI insights for test ${testId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  private async getInsightsDataForVariant(testId: string, variantType: string) {
+    const test = await this.testsService.getRawDataByTestId(testId);
+    const demographics = await this.testsService.getTestDemographics(testId);
+    const variantSummaries = await this.testsService.getTestSummaries(testId);
+    
+    // Get competitive insights filtered by variant
+    const competitorsInsights = await this.getCompetitiveInsightsByVariant(testId);
+
+    // Get the specific variant data
+    const variantInfo = test.variations[variantType];
+    if (!variantInfo) {
+      throw new NotFoundException(
+        `Variant ${variantType} not found for test ${testId}`,
+      );
+    }
+
+    const variantSummary = variantSummaries.find(
+      ({ variant_type }) => variant_type === variantType,
+    );
+
+    // Filter competitor insights to only show data for the current variant
+    const filteredCompetitorsInsights = Object.values(competitorsInsights).map(
+      (insights) => ({
+        name: insights.title,
+        price: insights.price,
+        // Only include data for the current variant
+        current_variant_performance: insights.variants[variantType] || null,
+      }),
+    );
+
+    return {
+      test_metadata: {
+        test_id: test.id,
+        objective: test.objective,
+        test_type: 'Variant-Based',
+        sample_size: demographics.tester_count,
+        created_date: test.createdAt,
+        search_term: test.searchTerm,
+        current_variant: variantType.toUpperCase(),
+        analysis_note: `This analysis focuses exclusively on Variant ${variantType.toUpperCase()} (${variantInfo.title} at $${variantInfo.price}). Do not compare to other variants.`,
+      },
+      audience: {
+        demographics: {
+          age_ranges: demographics.age_ranges,
+          gender: demographics.genders,
+          location: demographics.locations,
+        },
+      },
+      current_variant: {
+        id: variantType,
+        title: variantInfo.title,
+        price: variantInfo.price,
+        click_share: variantSummary?.share_of_click,
+        buy_share: variantSummary?.share_of_buy,
+        value_score: variantSummary?.value_score,
+      },
+      // Include all variants for context but clearly mark the current one
+      all_variants: Object.entries(test.variations).reduce(
+        (acc, [variantName, variantInfo]) => {
+          if (variantInfo) {
+            const variantSummary = variantSummaries.find(
+              ({ variant_type }) => variant_type === variantName,
+            );
+            acc.push({
+              id: variantName,
+              title: variantInfo.title,
+              price: variantInfo.price,
+              click_share: variantSummary?.share_of_click,
+              buy_share: variantSummary?.share_of_buy,
+              value_score: variantSummary?.value_score,
+              is_current_variant: variantName === variantType,
+            });
+          }
+
+          return acc;
+        },
+        [],
+      ),
+      // Only include competitor data for the current variant
+      competitors_detailed: filteredCompetitorsInsights,
     };
   }
 
@@ -601,6 +831,70 @@ export class InsightsService {
     };
   }
 
+  private async generateAiInsightsForVariant(
+    testId: string,
+    testObjective: TestObjective,
+    variantType: string,
+  ) {
+    const formattedData = await this.getInsightsDataForVariant(
+      testId,
+      variantType,
+    );
+
+    // Generate comment summary for this specific variant
+    let commentSummary: string | null = null;
+
+    try {
+      commentSummary = await this.generateCommentSummaryForVariant(
+        testId,
+        variantType,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        error,
+      );
+    }
+
+    const {
+      config: { provider, model },
+      messages,
+    } = await this.adalineService.getPromptDeployment(testObjective);
+
+    if (provider !== 'openai') {
+      throw new BadRequestException(
+        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+      );
+    }
+
+    // Format messages for OpenAI
+    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+      // Concatenate all text blocks in content
+      const content = msg.content.map((block) => block.value).join('\n\n');
+
+      return {
+        role: msg.role,
+        content,
+      } as ChatCompletionMessageParam;
+    });
+
+    const unformattedInsights = await this.openAiService.createChatCompletion(
+      [
+        ...openAiMessages,
+        {
+          role: 'user',
+          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+        },
+      ],
+      { model },
+    );
+
+    return {
+      ...insightsFormatter(unformattedInsights),
+      comment_summary: commentSummary,
+    };
+  }
+
   private async calculateShareOfClicks(
     testId: string,
     variantProductId: string,
@@ -679,6 +973,79 @@ export class InsightsService {
     }
   }
 
+  private async generateCommentSummaryForVariant(
+    testId: string,
+    variantType: string,
+  ) {
+    try {
+      this.logger.log(
+        `Generating comment summary for variant ${variantType} in test ${testId}`,
+      );
+
+      // Format survey responses for this specific variant
+      const variantData = await this.formatVariantSurveyResponses(
+        testId,
+        variantType,
+      );
+
+      // Get the Adaline prompt deployment
+      const {
+        config: { provider, model },
+        messages,
+      } = await this.adalineService.getPromptDeployment(
+        undefined,
+        '225e999e-3bba-4ca5-99a1-34805f9c8ac7',
+      );
+
+      if (provider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format messages for OpenAI
+      const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+        // Replace {data} placeholder with variant-specific data
+        const content = msg.content
+          .map((block) => {
+            if (block.value.includes('{data}')) {
+              return block.value.replace(
+                '{data}',
+                JSON.stringify(
+                  { [`Variant ${variantType.toUpperCase()}`]: variantData },
+                  null,
+                  2,
+                ),
+              );
+            }
+
+            return block.value;
+          })
+          .join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      // Generate the summary using OpenAI for this specific variant
+      const summary = await this.openAiService.createChatCompletion(
+        openAiMessages,
+        { model },
+      );
+
+      return summary;
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        error,
+      );
+
+      throw error;
+    }
+  }
+
   private async formatAllVariantsSurveyResponses(testId: string) {
     // Get all test variations
     const testVariations = await this.testsService.getTestVariations(testId);
@@ -713,5 +1080,44 @@ export class InsightsService {
     }
 
     return variantsData;
+  }
+
+  private async formatVariantSurveyResponses(
+    testId: string,
+    variantType: string,
+  ) {
+    // Get the specific test variation
+    const testVariations = await this.testsService.getTestVariations(testId);
+    const variation = testVariations.find(
+      (v) => v.variation_type === variantType,
+    );
+
+    if (!variation) {
+      throw new NotFoundException(
+        `Variant ${variantType} not found for test ${testId}`,
+      );
+    }
+
+    // Get survey responses for this variant
+    const surveyResponses = await this.productsService.getProductSurveys(
+      variation.product_id,
+      testId,
+    );
+
+    // Get comparison responses
+    const comparisonResponses =
+      await this.supabaseService.findMany<ResponseComparison>(
+        TableName.RESPONSES_COMPARISONS,
+        {
+          test_id: testId,
+          product_id: variation.product_id,
+        },
+      );
+
+    // Format responses for this variant
+    return surveyResponsesForSummaryFormatter(
+      surveyResponses,
+      comparisonResponses,
+    );
   }
 }

@@ -113,9 +113,12 @@ export interface AiInsight {
   id: number;
   created_at: string;
   test_id: string;
+  variant_type: string;
   comparison_between_variants: string;
   purchase_drivers: string;
+  competitive_insights: string;
   recommendations: string;
+  comment_summary?: string;
   sendEmail?: boolean;
 }
 
@@ -159,4 +162,19 @@ export interface CreditPayment {
   status: 'pending' | 'completed' | 'failed' | 'canceled';
   created_at: string;
   updated_at: string;
+}
+
+export interface CompetitiveInsight {
+  id: number;
+  created_at: string;
+  variant_type: 'a' | 'b' | 'c';
+  competitor_product_id: string;
+  share_of_buy: number;
+  value: number;
+  aesthetics: number;
+  utility: number;
+  trust: number;
+  convenience: number;
+  test_id: string;
+  count: number;
 }
