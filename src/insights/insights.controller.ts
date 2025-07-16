@@ -10,12 +10,12 @@ export class InsightsController {
   @UseGuards(JwtAuthGuard)
   @Get('/:testId') 
   getInsightsDataFromTest(
-    @Param('testId') insightsAi: string,
+    @Param('testId') testId: string,
     @Query('type') insightsType?: string
   ) {
     return insightsType === 'ai' 
-      ? this.insightsService.getAiInsights(insightsAi) 
-      : this.insightsService.getInsightsData(insightsAi);
+      ? this.insightsService.getAiInsights(testId) 
+      : this.insightsService.getInsightsData(testId);
   }
 
   @Post()
