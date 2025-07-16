@@ -8,6 +8,7 @@ async function bootstrap() {
       origin: [process.env.FE_URL],
       credentials: true,
     },
+    bodyParser: false
   });
 
   app.useGlobalPipes(new ValidationPipe());
