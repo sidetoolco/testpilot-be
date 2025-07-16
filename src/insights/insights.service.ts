@@ -317,6 +317,12 @@ export class InsightsService {
     testId: string,
     shopperCount: number,
   ) {
+    // Calculate total selections for this specific variant
+    const totalSelectionsForVariant = Object.values(groupedData).reduce(
+      (total: number, metrics: any) => total + metrics.count,
+      0
+    );
+
     return competitors.map((competitor) => {
       const metrics = groupedData[competitor.id] ||
         groupedData[competitor.product_id] || {
@@ -331,33 +337,39 @@ export class InsightsService {
 
       const count = metrics.count;
 
+      // FIX: Calculate share of buy based on total selections for this variant, not total shopper count
+      // This ensures that share of buy percentages sum to ~100% per variant
+      const shareOfBuy = totalSelectionsForVariant > 0 
+        ? ((count / totalSelectionsForVariant) * 100).toFixed(2)
+        : '0.00';
+
       return {
         variant_type: variation.variation_type,
         test_id: testId,
         competitor_product_id: competitor.product_id,
         aesthetics: (
           this.calculateAverage(metrics.averageAppearance, count) - 3
-        ).toFixed(1),
+        ).toFixed(2),
         utility: (
           this.calculateAverage(metrics.averageConfidence, count) - 3
-        ).toFixed(1),
+        ).toFixed(2),
         convenience: (
           this.calculateAverage(metrics.averageConvenience, count) - 3
-        ).toFixed(1),
+        ).toFixed(2),
         trust: (this.calculateAverage(metrics.averageBrand, count) - 3).toFixed(
           1,
         ),
         value: (this.calculateAverage(metrics.averageValue, count) - 3).toFixed(
           1,
         ),
-        share_of_buy: ((count / shopperCount) * 100).toFixed(1),
+        share_of_buy: shareOfBuy,
         count,
       };
     });
   }
 
   private calculateAverage(sum: number, count: number): number {
-    return count > 0 ? Number((sum / count).toFixed(1)) : 0;
+    return count > 0 ? Number((sum / count).toFixed(2)) : 0;
   }
 
   async purchaseDrivers(testId: string, variant: string) {
