@@ -148,7 +148,18 @@ export interface Invite {
 export interface CompanyCredits {
   id: string;
   company_id: string;
-  balance: number;
+  total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditPayment {
+  id: string;
+  company_id: string;
+  stripe_payment_intent_id: string | null;
+  amount_cents: number;
+  credits_purchased: number;
+  status: 'pending' | 'completed' | 'failed' | 'canceled';
   created_at: string;
   updated_at: string;
 }

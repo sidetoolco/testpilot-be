@@ -6,6 +6,8 @@ import {
 import { SupabaseService } from 'supabase/supabase.service';
 import { CreditsData, Transaction } from './interfaces';
 import { Rpc, TableName } from 'lib/enums';
+import { CompanyCredits, CreditPayment } from 'lib/interfaces/entities.interface';
+import { PaymentStatus } from './enums';
 
 @Injectable()
 export class CreditsService {
@@ -18,8 +20,8 @@ export class CreditsService {
     limit = 20,
   ): Promise<CreditsData> {
     try {
-      const [total, result] = await Promise.all([
-        this.supabaseService.findOne<number>(
+      const [{ total }, result] = await Promise.all([
+        this.supabaseService.findOne<Pick<CompanyCredits, 'total'>>(
           TableName.COMPANY_CREDITS,
           {
             company_id: companyId,
@@ -53,6 +55,50 @@ export class CreditsService {
     } catch (error) {
       this.logger.error('Error fetching company credits data:', error);
       throw new InternalServerErrorException('Failed to fetch credits data');
+    }
+  }
+
+  public async createPendingPayment(
+    companyId: string,
+    stripePaymentIntentId: string,
+    amountCents: number,
+    creditsPurchased: number,
+  ): Promise<CreditPayment[]> {
+    try {
+      const payment = await this.supabaseService.insert<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        {
+          company_id: companyId,
+          stripe_payment_intent_id: stripePaymentIntentId,
+          amount_cents: amountCents,
+          credits_purchased: creditsPurchased,
+          status: PaymentStatus.PENDING,
+        },
+      );
+
+      this.logger.log(`Created pending payment for company ${companyId}`);
+      return payment;
+    } catch (error) {
+      this.logger.error('Error creating pending payment:', error);
+      throw error;
+    }
+  }
+
+  public async updatePaymentStatus(
+    stripePaymentIntentId: string,
+    status: PaymentStatus,
+  ): Promise<void> {
+    try {
+      await this.supabaseService.update<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { status },
+        [{ key: 'stripe_payment_intent_id', value: stripePaymentIntentId }],
+      );
+
+      this.logger.log(`Updated payment ${stripePaymentIntentId} to ${status}`);
+    } catch (error) {
+      this.logger.error('Error updating payment status:', error);
+      throw error;
     }
   }
 }

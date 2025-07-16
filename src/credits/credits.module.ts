@@ -8,5 +8,6 @@ import { UsersModule } from 'users/users.module';
   providers: [CreditsService],
   controllers: [CreditsController],
   imports: [SupabaseModule, UsersModule],
+  exports: [CreditsService],
 })
 export class CreditsModule {}
