@@ -8,9 +8,9 @@ export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Get('/:insights_ai')  // This creates /insights/:insights_ai
+  @Get('/:testId') 
   getInsightsDataFromTest(
-    @Param('insights_ai') insightsAi: string,
+    @Param('testId') insightsAi: string,
     @Query('type') insightsType?: string
   ) {
     return insightsType === 'ai' 
