@@ -42,29 +42,9 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
                 }
               : {}),
             enableReadyCheck: false,
-            enableOfflineQueue: false,
             retryStrategy: (times: number) => {
-              if (times > 10) return null;
-              return Math.min(times * 1000, 30000);
-            },
-            maxRetriesPerRequest: null,
-            lazyConnect: true,
-            keepAlive: 30000,
-            connectTimeout: 30000,
-            commandTimeout: 10000,
-            disconnectTimeout: 5000,
-            enableAutoPipelining: true,
-            maxLoadingTimeout: 30000,
-            retryDelayOnFailover: 100,
-            retryDelayOnClusterDown: 300,
-          },
-          defaultJobOptions: {
-            removeOnComplete: 5,
-            removeOnFail: 3,
-            attempts: 2,
-            backoff: {
-              type: 'exponential',
-              delay: 1000 * 60, // 1 minute instead of 1 hour
+              if (times > 5) return null;
+              return Math.pow(2, times) * 100;
             },
           },
         };
