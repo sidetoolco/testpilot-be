@@ -127,6 +127,8 @@ export interface Test {
   name: string;
   objective: TestObjective;
   status: TestStatus;
+  target_participant_count: number;
+  custom_screening_enabled: boolean;
 }
 
 export interface Event {
@@ -162,4 +164,12 @@ export interface CreditPayment {
   status: 'pending' | 'completed' | 'failed' | 'canceled';
   created_at: string;
   updated_at: string;
+}
+
+export interface CreditUsage {
+  id: string;
+  company_id: string;
+  credits_used: number;
+  test_id: string | null;
+  created_at: string;
 }
