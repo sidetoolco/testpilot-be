@@ -24,19 +24,19 @@ export function insightsFormatter(unformattedInsights: string) {
     }
 
     // Find PURCHASE DRIVERS
-    const purchaseMatch = unformattedInsights.match(/purchase drivers[^]*?([\s\S]*?)(?=competitive insights|recommendations)/i);
+    const purchaseMatch = unformattedInsights.match(/purchase drivers\s*([\s\S]*?)(?=competitive insights|recommendations)/i);
     if (purchaseMatch) {
       sections.purchase_drivers = purchaseMatch[1].trim();
     }
 
     // Find COMPETITIVE INSIGHTS
-    const competitiveMatch = unformattedInsights.match(/competitive insights[^]*?([\s\S]*?)(?=recommendations)/i);
+    const competitiveMatch = unformattedInsights.match(/competitive insights\s*([\s\S]*?)(?=recommendations)/i);
     if (competitiveMatch) {
       sections.competitive_insights = competitiveMatch[1].trim();
     }
 
     // Find RECOMMENDATIONS
-    const recommendationsMatch = unformattedInsights.match(/recommendations[^]*?([\s\S]*)/i);
+    const recommendationsMatch = unformattedInsights.match(/recommendations\s*([\s\S]*)/i);
     if (recommendationsMatch) {
       sections.recommendations = recommendationsMatch[1].trim();
     }

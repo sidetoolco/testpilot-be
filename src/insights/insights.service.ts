@@ -49,21 +49,16 @@ export class InsightsService {
 
   public async saveAiInsights(testId: string) {
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== STARTING AI INSIGHTS GENERATION FOR TEST ${testId} =====`);
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Test objective: ${objective}`);
       
       const testVariations = await this.testsService.getTestVariations(testId);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Found ${testVariations.length} variants for test ${testId}`);
-      testVariations.forEach(v => this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant: ${v.variation_type}`));
 
       const results = [];
 
       // Generate AI insights for each variant
       for (const variation of testVariations) {
         try {
-          this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== PROCESSING VARIANT ${variation.variation_type} =====`);
           this.logger.log(
             `Generating AI insights for variant ${variation.variation_type}`,
           );
@@ -73,7 +68,6 @@ export class InsightsService {
             variation.variation_type,
           );
 
-          this.logger.log(`[EDITOR/FORMATTER DEBUG] Saving AI insights for variant ${variation.variation_type}`);
           const savedInsight = await this.supabaseService.upsert<AiInsight>(
             TableName.AI_INSIGHTS,
             {
@@ -84,23 +78,20 @@ export class InsightsService {
             'test_id,variant_type',
           );
 
-          this.logger.log(`[EDITOR/FORMATTER DEBUG] Successfully saved insights for variant ${variation.variation_type}`);
           results.push(savedInsight);
         } catch (error) {
           this.logger.error(
-            `[EDITOR/FORMATTER DEBUG] Failed to generate AI insights for variant ${variation.variation_type}:`,
+            `Failed to generate AI insights for variant ${variation.variation_type}:`,
             error,
           );
           // Continue with other variants even if one fails
         }
       }
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== COMPLETED AI INSIGHTS GENERATION FOR TEST ${testId} =====`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Total results: ${results.length}`);
       return results;
     } catch (error) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate or save AI insights for test ${testId}:`,
+        `Failed to generate or save AI insights for test ${testId}:`,
         error,
       );
       throw error;
@@ -697,22 +688,16 @@ export class InsightsService {
     testId: string,
     testObjective: TestObjective,
   ) {
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Starting generateAiInsights for test ${testId}`);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Test objective: ${testObjective}`);
-    
     const formattedData = await this.getInsightsData(testId);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Formatted data retrieved for test ${testId}`);
 
     // Generate comment summary for all variants in one call
     let commentSummary: string | null = null;
 
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Generating comment summary for test ${testId}`);
       commentSummary = await this.generateCommentSummary(testId);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Comment summary generated successfully for test ${testId}`);
     } catch (error) {
       this.logger.warn(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate comment summary for test ${testId}:`,
+        `Failed to generate comment summary for test ${testId}:`,
         error,
       );
     }
@@ -720,14 +705,10 @@ export class InsightsService {
     // First call: Generate initial insights
     let unformattedInsights: string;
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Getting prompt deployment for test ${testId}`);
       const {
         config: { provider, model },
         messages,
       } = await this.adalineService.getPromptDeployment(testObjective);
-
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Prompt deployment config - provider: ${provider}, model: ${model}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Number of messages: ${messages.length}`);
 
       if (provider !== 'openai') {
         throw new BadRequestException(
@@ -746,7 +727,6 @@ export class InsightsService {
         } as ChatCompletionMessageParam;
       });
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for initial insights for test ${testId}`);
       unformattedInsights = await this.openAiService.createChatCompletion(
         [
           ...openAiMessages,
@@ -757,12 +737,9 @@ export class InsightsService {
         ],
         { model },
       );
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial insights generated for test ${testId}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial insights length: ${unformattedInsights.length} characters`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial insights preview: ${unformattedInsights.substring(0, 200)}...`);
     } catch (error) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate initial insights for test ${testId}:`,
+        `Failed to generate initial insights for test ${testId}:`,
         error,
       );
       throw new BadRequestException(
@@ -773,7 +750,6 @@ export class InsightsService {
     // Second call: Edit and fact-check the insights
     let editedInsights: string;
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Getting editor prompt deployment for test ${testId}`);
       const {
         config: { provider: editorProvider, model: editorModel },
         messages: editorMessages,
@@ -781,9 +757,6 @@ export class InsightsService {
         undefined,
         '0e1ad14a-b33b-4068-9924-201a6913eb59',
       );
-
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Editor deployment config - provider: ${editorProvider}, model: ${editorModel}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Number of editor messages: ${editorMessages.length}`);
 
       if (editorProvider !== 'openai') {
         throw new BadRequestException(
@@ -797,7 +770,6 @@ export class InsightsService {
         const content = msg.content
           .map((block) => {
             if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
-              this.logger.log(`[EDITOR/FORMATTER DEBUG] Found {data} placeholder, replacing with insights and data`);
               return block.value.replace(
                 '{data}',
                 `Initial Analysis:\n\n${unformattedInsights}\n\n///DATA///\n\n${JSON.stringify(formattedData, null, 2)}`
@@ -813,41 +785,30 @@ export class InsightsService {
         } as ChatCompletionMessageParam;
       });
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for edited insights for test ${testId}`);
       editedInsights = await this.openAiService.createChatCompletion(
         editorOpenAiMessages,
         { model: editorModel },
       );
-
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited insights generated for test ${testId}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited insights length: ${editedInsights.length} characters`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited insights preview: ${editedInsights.substring(0, 200)}...`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Editor prompt response for test ${testId}: ${editedInsights.substring(0, 500)}...`);
     } catch (error) {
       this.logger.warn(
-        `[EDITOR/FORMATTER DEBUG] Failed to edit insights for test ${testId}, using original insights:`,
+        `Failed to edit insights for test ${testId}, using original insights:`,
         error,
       );
       // Fallback to original insights if editing fails
       editedInsights = unformattedInsights;
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Using fallback insights for test ${testId}`);
     }
 
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Attempting to format insights for test ${testId}`);
       const formattedResult = {
         ...insightsFormatter(editedInsights),
         comment_summary: commentSummary,
       };
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Insights formatted successfully for test ${testId}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Formatted result keys: ${Object.keys(formattedResult).join(', ')}`);
       return formattedResult;
     } catch (formatError) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to format insights for test ${testId}:`,
+        `Failed to format insights for test ${testId}:`,
         formatError,
       );
-      this.logger.error(`[EDITOR/FORMATTER DEBUG] Raw insights text: ${editedInsights.substring(0, 1000)}`);
       
       // Fallback to a basic format if the formatter fails
       const fallbackResult = {
@@ -857,7 +818,6 @@ export class InsightsService {
         recommendations: '',
         comment_summary: commentSummary,
       };
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Using fallback format for test ${testId}`);
       return fallbackResult;
     }
   }
@@ -867,40 +827,30 @@ export class InsightsService {
     testObjective: TestObjective,
     variantType: string,
   ) {
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Starting generateAiInsightsForVariant for test ${testId}, variant ${variantType}`);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Test objective: ${testObjective}`);
-    
     const formattedData = await this.getInsightsDataForVariant(
       testId,
       variantType,
     );
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant-specific formatted data retrieved for test ${testId}, variant ${variantType}`);
 
     // Generate comment summary for this specific variant
     let commentSummary: string | null = null;
 
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Generating comment summary for variant ${variantType} in test ${testId}`);
       commentSummary = await this.generateCommentSummaryForVariant(
         testId,
         variantType,
       );
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Comment summary generated successfully for variant ${variantType} in test ${testId}`);
     } catch (error) {
       this.logger.warn(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
         error,
       );
     }
 
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Getting prompt deployment for variant ${variantType} in test ${testId}`);
     const {
       config: { provider, model },
       messages,
     } = await this.adalineService.getPromptDeployment(testObjective);
-
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant prompt deployment config - provider: ${provider}, model: ${model}`);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Number of variant messages: ${messages.length}`);
 
     if (provider !== 'openai') {
       throw new BadRequestException(
@@ -919,7 +869,6 @@ export class InsightsService {
       } as ChatCompletionMessageParam;
     });
 
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for variant insights for test ${testId}, variant ${variantType}`);
     const unformattedInsights = await this.openAiService.createChatCompletion(
       [
         ...openAiMessages,
@@ -931,25 +880,17 @@ export class InsightsService {
       { model },
     );
 
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant insights generated for test ${testId}, variant ${variantType}`);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant insights length: ${unformattedInsights.length} characters`);
-    this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant insights preview: ${unformattedInsights.substring(0, 200)}...`);
-
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Attempting to format variant insights for test ${testId}, variant ${variantType}`);
       const formattedResult = {
         ...insightsFormatter(unformattedInsights),
         comment_summary: commentSummary,
       };
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant insights formatted successfully for test ${testId}, variant ${variantType}`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant formatted result keys: ${Object.keys(formattedResult).join(', ')}`);
       return formattedResult;
     } catch (formatError) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to format variant insights for test ${testId}, variant ${variantType}:`,
+        `Failed to format variant insights for test ${testId}, variant ${variantType}:`,
         formatError,
       );
-      this.logger.error(`[EDITOR/FORMATTER DEBUG] Raw variant insights text: ${unformattedInsights.substring(0, 1000)}`);
       
       // Fallback to a basic format if the formatter fails
       const fallbackResult = {
@@ -959,7 +900,6 @@ export class InsightsService {
         recommendations: '',
         comment_summary: commentSummary,
       };
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Using fallback format for variant ${variantType} in test ${testId}`);
       return fallbackResult;
     }
   }
@@ -983,14 +923,10 @@ export class InsightsService {
 
   private async generateCommentSummary(testId: string) {
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== STARTING COMMENT SUMMARY GENERATION FOR TEST ${testId} =====`);
-
       // Format all variants' survey responses
       const variantsData = await this.formatAllVariantsSurveyResponses(testId);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Formatted variants data for comment summary`);
 
       // STEP A: Generate initial draft
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] STEP A: Generating initial comment summary draft for test ${testId}`);
       const {
         config: { provider, model },
         messages,
@@ -998,8 +934,6 @@ export class InsightsService {
         undefined,
         '225e999e-3bba-4ca5-99a1-34805f9c8ac7',
       );
-
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Comment summary deployment config - provider: ${provider}, model: ${model}`);
 
       if (provider !== 'openai') {
         throw new BadRequestException(
@@ -1013,7 +947,6 @@ export class InsightsService {
         const content = msg.content
           .map((block) => {
             if (block.value.includes('{data}')) {
-              this.logger.log(`[EDITOR/FORMATTER DEBUG] Found {data} placeholder in comment summary prompt`);
               return block.value.replace(
                 '{data}',
                 JSON.stringify(variantsData, null, 2),
@@ -1031,18 +964,12 @@ export class InsightsService {
       });
 
       // Generate the initial draft using OpenAI
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for initial comment summary draft`);
       const initialDraft = await this.openAiService.createChatCompletion(
         openAiMessages,
         { model },
       );
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial comment summary draft generated`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial draft length: ${initialDraft.length} characters`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial draft preview: ${initialDraft.substring(0, 200)}...`);
-
       // STEP B: Edit the draft with Allan's style guide
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] STEP B: Editing comment summary with Allan's style guide for test ${testId}`);
       let editedSummary: string;
       try {
         const {
@@ -1052,8 +979,6 @@ export class InsightsService {
           undefined,
           '0e1ad14a-b33b-4068-9924-201a6913eb59', // Editor prompt deployment
         );
-
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Comment summary editor deployment config - provider: ${editorProvider}, model: ${editorModel}`);
 
         if (editorProvider !== 'openai') {
           throw new BadRequestException(
@@ -1067,7 +992,6 @@ export class InsightsService {
           const content = msg.content
             .map((block) => {
               if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
-                this.logger.log(`[EDITOR/FORMATTER DEBUG] Found {data} placeholder in comment summary editor prompt`);
                 return block.value.replace(
                   '{data}',
                   `Initial Comment Summary Draft:\n\n${initialDraft}\n\n///VARIANTS DATA///\n\n${JSON.stringify(variantsData, null, 2)}`
@@ -1083,31 +1007,24 @@ export class InsightsService {
           } as ChatCompletionMessageParam;
         });
 
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for edited comment summary`);
         editedSummary = await this.openAiService.createChatCompletion(
           editorOpenAiMessages,
           { model: editorModel },
         );
 
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Comment summary edited successfully`);
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited summary length: ${editedSummary.length} characters`);
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited summary preview: ${editedSummary.substring(0, 200)}...`);
-
       } catch (error) {
         this.logger.warn(
-          `[EDITOR/FORMATTER DEBUG] Failed to edit comment summary for test ${testId}, using original draft:`,
+          `Failed to edit comment summary for test ${testId}, using original draft:`,
           error,
         );
         // Fallback to original draft if editing fails
         editedSummary = initialDraft;
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Using fallback comment summary for test ${testId}`);
       }
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== COMPLETED COMMENT SUMMARY GENERATION FOR TEST ${testId} =====`);
       return editedSummary;
     } catch (error) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate comment summary for test ${testId}:`,
+        `Failed to generate comment summary for test ${testId}:`,
         error,
       );
 
@@ -1120,17 +1037,13 @@ export class InsightsService {
     variantType: string,
   ) {
     try {
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== STARTING COMMENT SUMMARY GENERATION FOR VARIANT ${variantType} IN TEST ${testId} =====`);
-
       // Format survey responses for this specific variant
       const variantData = await this.formatVariantSurveyResponses(
         testId,
         variantType,
       );
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Formatted variant data for comment summary`);
 
       // STEP A: Generate initial draft
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] STEP A: Generating initial comment summary draft for variant ${variantType} in test ${testId}`);
       const {
         config: { provider, model },
         messages,
@@ -1138,8 +1051,6 @@ export class InsightsService {
         undefined,
         '225e999e-3bba-4ca5-99a1-34805f9c8ac7',
       );
-
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant comment summary deployment config - provider: ${provider}, model: ${model}`);
 
       if (provider !== 'openai') {
         throw new BadRequestException(
@@ -1153,7 +1064,6 @@ export class InsightsService {
         const content = msg.content
           .map((block) => {
             if (block.value.includes('{data}')) {
-              this.logger.log(`[EDITOR/FORMATTER DEBUG] Found {data} placeholder in variant comment summary prompt`);
               return block.value.replace(
                 '{data}',
                 JSON.stringify(
@@ -1175,18 +1085,12 @@ export class InsightsService {
       });
 
       // Generate the initial draft using OpenAI for this specific variant
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for initial variant comment summary draft`);
       const initialDraft = await this.openAiService.createChatCompletion(
         openAiMessages,
         { model },
       );
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial variant comment summary draft generated`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial variant draft length: ${initialDraft.length} characters`);
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] Initial variant draft preview: ${initialDraft.substring(0, 200)}...`);
-
       // STEP B: Edit the draft with Allan's style guide
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] STEP B: Editing variant comment summary with Allan's style guide for variant ${variantType} in test ${testId}`);
       let editedSummary: string;
       try {
         const {
@@ -1196,8 +1100,6 @@ export class InsightsService {
           undefined,
           '0e1ad14a-b33b-4068-9924-201a6913eb59', // Editor prompt deployment
         );
-
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant comment summary editor deployment config - provider: ${editorProvider}, model: ${editorModel}`);
 
         if (editorProvider !== 'openai') {
           throw new BadRequestException(
@@ -1211,7 +1113,6 @@ export class InsightsService {
           const content = msg.content
             .map((block) => {
               if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
-                this.logger.log(`[EDITOR/FORMATTER DEBUG] Found {data} placeholder in variant comment summary editor prompt`);
                 return block.value.replace(
                   '{data}',
                   `Initial Comment Summary Draft for Variant ${variantType.toUpperCase()}:\n\n${initialDraft}\n\n///VARIANT DATA///\n\n${JSON.stringify({ [`Variant ${variantType.toUpperCase()}`]: variantData }, null, 2)}`
@@ -1227,31 +1128,24 @@ export class InsightsService {
           } as ChatCompletionMessageParam;
         });
 
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Calling OpenAI for edited variant comment summary`);
         editedSummary = await this.openAiService.createChatCompletion(
           editorOpenAiMessages,
           { model: editorModel },
         );
 
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Variant comment summary edited successfully`);
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited variant summary length: ${editedSummary.length} characters`);
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Edited variant summary preview: ${editedSummary.substring(0, 200)}...`);
-
       } catch (error) {
         this.logger.warn(
-          `[EDITOR/FORMATTER DEBUG] Failed to edit variant comment summary for variant ${variantType} in test ${testId}, using original draft:`,
+          `Failed to edit variant comment summary for variant ${variantType} in test ${testId}, using original draft:`,
           error,
         );
         // Fallback to original draft if editing fails
         editedSummary = initialDraft;
-        this.logger.log(`[EDITOR/FORMATTER DEBUG] Using fallback variant comment summary for variant ${variantType} in test ${testId}`);
       }
 
-      this.logger.log(`[EDITOR/FORMATTER DEBUG] ===== COMPLETED COMMENT SUMMARY GENERATION FOR VARIANT ${variantType} IN TEST ${testId} =====`);
       return editedSummary;
     } catch (error) {
       this.logger.error(
-        `[EDITOR/FORMATTER DEBUG] Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
+        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
         error,
       );
 
