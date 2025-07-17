@@ -51,6 +51,7 @@ export class InsightsService {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
       const { objective } = await this.testsService.getTestById(testId);
+      
       const testVariations = await this.testsService.getTestVariations(testId);
 
       const results = [];
@@ -90,7 +91,7 @@ export class InsightsService {
       return results;
     } catch (error) {
       this.logger.error(
-        `Failed to generate AI insights for test ${testId}:`,
+        `Failed to generate or save AI insights for test ${testId}:`,
         error,
       );
       throw error;
@@ -701,43 +702,124 @@ export class InsightsService {
       );
     }
 
-    const {
-      config: { provider, model },
-      messages,
-    } = await this.adalineService.getPromptDeployment(testObjective);
+    // First call: Generate initial insights
+    let unformattedInsights: string;
+    try {
+      const {
+        config: { provider, model },
+        messages,
+      } = await this.adalineService.getPromptDeployment(testObjective);
 
-    if (provider !== 'openai') {
+      if (provider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        );
+      }
+
+      // Format messages for OpenAI
+      const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+        // Concatenate all text blocks in content
+        const content = msg.content.map((block) => block.value).join('\n\n');
+
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      unformattedInsights = await this.openAiService.createChatCompletion(
+        [
+          ...openAiMessages,
+          {
+            role: 'user',
+            content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+          },
+        ],
+        { model },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate initial insights for test ${testId}:`,
+        error,
+      );
       throw new BadRequestException(
-        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+        `Failed to generate initial insights: ${error.message}`,
       );
     }
 
-    // Format messages for OpenAI
-    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
-      // Concatenate all text blocks in content
-      const content = msg.content.map((block) => block.value).join('\n\n');
+    // Second call: Edit and fact-check the insights
+    let editedInsights: string;
+    try {
+      const {
+        config: { provider: editorProvider, model: editorModel },
+        messages: editorMessages,
+      } = await this.adalineService.getPromptDeployment(
+        undefined,
+        '0e1ad14a-b33b-4068-9924-201a6913eb59',
+      );
 
-      return {
-        role: msg.role,
-        content,
-      } as ChatCompletionMessageParam;
-    });
+      if (editorProvider !== 'openai') {
+        throw new BadRequestException(
+          `Unsupported LLM provider: ${editorProvider}. Only 'openai' is supported.`,
+        );
+      }
 
-    const unformattedInsights = await this.openAiService.createChatCompletion(
-      [
-        ...openAiMessages,
-        {
-          role: 'user',
-          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
-        },
-      ],
-      { model },
-    );
+      // Format editor messages for OpenAI
+      const editorOpenAiMessages = editorMessages.map<ChatCompletionMessageParam>((msg) => {
+        // Replace {data} placeholder with the initial insights and test data
+        const content = msg.content
+          .map((block) => {
+            if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
+              return block.value.replace(
+                '{data}',
+                `Initial Analysis:\n\n${unformattedInsights}\n\n///DATA///\n\n${JSON.stringify(formattedData, null, 2)}`
+              );
+            }
+            return block && typeof block.value === 'string' ? block.value : '';
+          })
+          .join('\n\n');
 
-    return {
-      ...insightsFormatter(unformattedInsights),
-      comment_summary: commentSummary,
-    };
+        return {
+          role: msg.role,
+          content,
+        } as ChatCompletionMessageParam;
+      });
+
+      editedInsights = await this.openAiService.createChatCompletion(
+        editorOpenAiMessages,
+        { model: editorModel },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to edit insights for test ${testId}, using original insights:`,
+        error,
+      );
+      // Fallback to original insights if editing fails
+      editedInsights = unformattedInsights;
+    }
+
+    try {
+      const formattedResult = {
+        ...insightsFormatter(editedInsights),
+        comment_summary: commentSummary,
+      };
+      return formattedResult;
+    } catch (formatError) {
+      this.logger.error(
+        `Failed to format insights for test ${testId}:`,
+        formatError,
+      );
+      
+      // Fallback to a basic format if the formatter fails
+      const fallbackResult = {
+        comparison_between_variants: editedInsights,
+        purchase_drivers: '',
+        competitive_insights: '',
+        recommendations: '',
+        comment_summary: commentSummary,
+      };
+      return fallbackResult;
+    }
   }
 
   private async generateAiInsightsForVariant(
@@ -798,10 +880,28 @@ export class InsightsService {
       { model },
     );
 
-    return {
-      ...insightsFormatter(unformattedInsights),
-      comment_summary: commentSummary,
-    };
+    try {
+      const formattedResult = {
+        ...insightsFormatter(unformattedInsights),
+        comment_summary: commentSummary,
+      };
+      return formattedResult;
+    } catch (formatError) {
+      this.logger.error(
+        `Failed to format variant insights for test ${testId}, variant ${variantType}:`,
+        formatError,
+      );
+      
+      // Fallback to a basic format if the formatter fails
+      const fallbackResult = {
+        comparison_between_variants: unformattedInsights,
+        purchase_drivers: '',
+        competitive_insights: '',
+        recommendations: '',
+        comment_summary: commentSummary,
+      };
+      return fallbackResult;
+    }
   }
 
   private async calculateShareOfClicks(
@@ -823,12 +923,10 @@ export class InsightsService {
 
   private async generateCommentSummary(testId: string) {
     try {
-      this.logger.log(`Generating comment summary for test ${testId}`);
-
       // Format all variants' survey responses
       const variantsData = await this.formatAllVariantsSurveyResponses(testId);
 
-      // Get the Adaline prompt deployment
+      // STEP A: Generate initial draft
       const {
         config: { provider, model },
         messages,
@@ -865,13 +963,65 @@ export class InsightsService {
         } as ChatCompletionMessageParam;
       });
 
-      // Genearte the summary using OpenAI - single call for all variants
-      const summary = await this.openAiService.createChatCompletion(
+      // Generate the initial draft using OpenAI
+      const initialDraft = await this.openAiService.createChatCompletion(
         openAiMessages,
         { model },
       );
 
-      return summary;
+      // STEP B: Edit the draft with Allan's style guide
+      let editedSummary: string;
+      try {
+        const {
+          config: { provider: editorProvider, model: editorModel },
+          messages: editorMessages,
+        } = await this.adalineService.getPromptDeployment(
+          undefined,
+          '0e1ad14a-b33b-4068-9924-201a6913eb59', // Editor prompt deployment
+        );
+
+        if (editorProvider !== 'openai') {
+          throw new BadRequestException(
+            `Unsupported LLM provider: ${editorProvider}. Only 'openai' is supported.`,
+          );
+        }
+
+        // Format editor messages for OpenAI
+        const editorOpenAiMessages = editorMessages.map<ChatCompletionMessageParam>((msg) => {
+          // Replace {data} placeholder with the initial draft and variants data
+          const content = msg.content
+            .map((block) => {
+              if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
+                return block.value.replace(
+                  '{data}',
+                  `Initial Comment Summary Draft:\n\n${initialDraft}\n\n///VARIANTS DATA///\n\n${JSON.stringify(variantsData, null, 2)}`
+                );
+              }
+              return block && typeof block.value === 'string' ? block.value : '';
+            })
+            .join('\n\n');
+
+          return {
+            role: msg.role,
+            content,
+          } as ChatCompletionMessageParam;
+        });
+
+        editedSummary = await this.openAiService.createChatCompletion(
+          editorOpenAiMessages,
+          { model: editorModel },
+        );
+
+      } catch (error) {
+        this.logger.warn(
+          `Failed to edit comment summary for test ${testId}, using original draft:`,
+          error,
+        );
+        // Fallback to original draft if editing fails
+        editedSummary = initialDraft;
+      }
+
+      return editedSummary;
     } catch (error) {
       this.logger.error(
         `Failed to generate comment summary for test ${testId}:`,
@@ -887,17 +1037,13 @@ export class InsightsService {
     variantType: string,
   ) {
     try {
-      this.logger.log(
-        `Generating comment summary for variant ${variantType} in test ${testId}`,
-      );
-
       // Format survey responses for this specific variant
       const variantData = await this.formatVariantSurveyResponses(
         testId,
         variantType,
       );
 
-      // Get the Adaline prompt deployment
+      // STEP A: Generate initial draft
       const {
         config: { provider, model },
         messages,
@@ -938,13 +1084,65 @@ export class InsightsService {
         } as ChatCompletionMessageParam;
       });
 
-      // Generate the summary using OpenAI for this specific variant
-      const summary = await this.openAiService.createChatCompletion(
+      // Generate the initial draft using OpenAI for this specific variant
+      const initialDraft = await this.openAiService.createChatCompletion(
         openAiMessages,
         { model },
       );
 
-      return summary;
+      // STEP B: Edit the draft with Allan's style guide
+      let editedSummary: string;
+      try {
+        const {
+          config: { provider: editorProvider, model: editorModel },
+          messages: editorMessages,
+        } = await this.adalineService.getPromptDeployment(
+          undefined,
+          '0e1ad14a-b33b-4068-9924-201a6913eb59', // Editor prompt deployment
+        );
+
+        if (editorProvider !== 'openai') {
+          throw new BadRequestException(
+            `Unsupported LLM provider: ${editorProvider}. Only 'openai' is supported.`,
+          );
+        }
+
+        // Format editor messages for OpenAI
+        const editorOpenAiMessages = editorMessages.map<ChatCompletionMessageParam>((msg) => {
+          // Replace {data} placeholder with the initial draft and variant data
+          const content = msg.content
+            .map((block) => {
+              if (block && typeof block.value === 'string' && block.value.includes('{data}')) {
+                return block.value.replace(
+                  '{data}',
+                  `Initial Comment Summary Draft for Variant ${variantType.toUpperCase()}:\n\n${initialDraft}\n\n///VARIANT DATA///\n\n${JSON.stringify({ [`Variant ${variantType.toUpperCase()}`]: variantData }, null, 2)}`
+                );
+              }
+              return block && typeof block.value === 'string' ? block.value : '';
+            })
+            .join('\n\n');
+
+          return {
+            role: msg.role,
+            content,
+          } as ChatCompletionMessageParam;
+        });
+
+        editedSummary = await this.openAiService.createChatCompletion(
+          editorOpenAiMessages,
+          { model: editorModel },
+        );
+
+      } catch (error) {
+        this.logger.warn(
+          `Failed to edit variant comment summary for variant ${variantType} in test ${testId}, using original draft:`,
+          error,
+        );
+        // Fallback to original draft if editing fails
+        editedSummary = initialDraft;
+      }
+
+      return editedSummary;
     } catch (error) {
       this.logger.error(
         `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
