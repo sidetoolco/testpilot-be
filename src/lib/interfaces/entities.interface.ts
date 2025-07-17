@@ -113,6 +113,7 @@ export interface AiInsight {
   id: number;
   created_at: string;
   test_id: string;
+  variant_type: string;
   comparison_between_variants: string;
   purchase_drivers: string;
   competitive_insights: string;
@@ -142,4 +143,23 @@ export interface Invite {
   company_id: string;
   token: string;
   expires_at: string;
+}
+
+export interface CompanyCredits {
+  id: string;
+  company_id: string;
+  total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditPayment {
+  id: string;
+  company_id: string;
+  stripe_payment_intent_id: string | null;
+  amount_cents: number;
+  credits_purchased: number;
+  status: 'pending' | 'completed' | 'failed' | 'canceled';
+  created_at: string;
+  updated_at: string;
 }

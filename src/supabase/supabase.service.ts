@@ -82,7 +82,10 @@ export class SupabaseService {
     return result as T | null;
   }
 
-  public async rpc(functionName: Rpc, params?: Record<string, any>) {
+  public async rpc<T>(
+    functionName: Rpc,
+    params?: Record<string, any>,
+  ): Promise<T> {
     const { data, error } = await this.client.rpc(functionName, params);
 
     if (error) throw error;
@@ -147,8 +150,9 @@ export class SupabaseService {
   public async findOne<T>(
     tableName: TableName,
     conditions: Record<string, any>,
+    select = '*'
   ): Promise<T | null> {
-    let query = this.client.from(tableName).select('*');
+    let query = this.client.from(tableName).select(select);
 
     for (const [key, value] of Object.entries(conditions)) {
       query = query.eq(key, value);

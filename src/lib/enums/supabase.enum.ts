@@ -17,8 +17,12 @@ export enum TableName {
   PROFILES = 'profiles',
   EVENTS = 'events',
   COMPANY_INVITES = 'invites',
+  COMPANY_CREDITS = 'company_credits',
+  CREDIT_PAYMENTS = 'credit_payments',
+  CREDIT_USAGE = 'credit_usage',
 }
 
 export enum Rpc {
   GET_COMPETITOR_INSIGHTS = 'get_competitive_insights_by_competitor',
+  GET_COMPANY_TRANSACTION_HISTORY = 'get_company_transaction_history',
 }
