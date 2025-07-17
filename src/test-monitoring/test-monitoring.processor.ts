@@ -4,7 +4,10 @@ import { Job } from 'bullmq';
 import { EmailService } from 'email/email.service';
 import { ProlificService } from 'prolific/prolific.service';
 
-@Processor('test-completion')
+@Processor('test-completion', {
+  concurrency: 1,
+  maxStalledCount: 1,
+})
 export class TestMonitoringProcessor extends WorkerHost {
   private readonly logger = new Logger(TestMonitoringProcessor.name);
 
@@ -19,7 +22,6 @@ export class TestMonitoringProcessor extends WorkerHost {
     const { studyId, testId } = job.data;
 
     try {
-      // Get study from Prolific
       const study = await this.prolificService.getStudy(studyId);
 
       if (!study) {

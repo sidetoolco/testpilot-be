@@ -23,16 +23,14 @@ export class TestMonitoringService {
           testId,
         },
         {
-          delay: 72 * 60 * 60 * 1000, // 72 hours to milliseconds
-          attempts: 3,
+          delay: 72 * 60 * 60 * 1000,
+          attempts: 1,
           backoff: {
             type: 'exponential',
-            delay: 1000 * 60 * 60, // 1 hour
+            delay: 600000,
           },
         },
       );
-
-      this.logger.log(`Scheduled completion check for study ${studyId}`);
     } catch (error) {
       this.logger.error(
         `Failed to schedule completion check for study ${studyId}:`,

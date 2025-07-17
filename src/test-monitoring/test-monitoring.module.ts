@@ -9,6 +9,15 @@ import { EmailModule } from 'email/email.module';
   imports: [
     BullModule.registerQueue({
       name: 'test-completion',
+      defaultJobOptions: {
+        removeOnComplete: 1,
+        removeOnFail: 1,
+        attempts: 1,
+        backoff: {
+          type: 'exponential',
+          delay: 600000,
+        },
+      },
     }),
     ProlificModule,
     EmailModule
