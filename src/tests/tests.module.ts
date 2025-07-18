@@ -5,6 +5,7 @@ import { TestsController } from './tests.controller';
 import { ProlificModule } from 'prolific/prolific.module';
 import { TestMonitoringModule } from 'test-monitoring/test-monitoring.module';
 import { TestStatusGateway } from './gateways/test-status.gateway';
+import { CreditsModule } from 'credits/credits.module';
 
 @Module({
   providers: [TestsService, TestStatusGateway],
@@ -12,6 +13,7 @@ import { TestStatusGateway } from './gateways/test-status.gateway';
     SupabaseModule,
     forwardRef(() => ProlificModule),
     TestMonitoringModule,
+    CreditsModule,
   ],
   controllers: [TestsController],
   exports: [TestsService],
