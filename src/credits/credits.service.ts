@@ -165,11 +165,11 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      const { total = 0 } = await this.supabaseService.findOne<
+      const companyCredits = await this.supabaseService.findOne<
         Pick<CompanyCredits, 'total'>
       >(TableName.COMPANY_CREDITS, { company_id: companyId }, 'total');
 
-      return total;
+      return companyCredits?.total || 0;
     } catch (error) {
       this.logger.error('Error checking company credits:', error);
       throw new InternalServerErrorException('Failed to check company credits');

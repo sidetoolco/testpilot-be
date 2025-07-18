@@ -174,8 +174,6 @@ export class TestsService {
   }
 
   public async publishTest(testId: string) {
-    // TODO: Add rollback for each variation. 
-    
     try {
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
@@ -194,20 +192,14 @@ export class TestsService {
         throw new BadRequestException('Insufficient credits.');
       }
 
-      // Create credit usage record BEFORE publishing
-      await this.creditsService.saveCreditUsage(
-        test.company_id,
-        testId,
-        requiredCredits,
-      );
-
+      
       const testVariations = await this.getTestVariations(testId);
-
+      
       // Check Prolific balance before publishing any studies
       await this.prolificService.checkBalanceForTestPublishing(
         testVariations.map(({ prolific_test_id }) => prolific_test_id),
       );
-
+      
       // Publish each variation
       // TODO: Split this into its own separated function
       for (const variation of testVariations) {
@@ -217,17 +209,25 @@ export class TestsService {
             variation.prolific_test_id,
             testId,
           );
-
+          
           // Wait 30 second before processing the next variation
           await new Promise((resolve) => setTimeout(resolve, 30000));
         } catch (error) {
           const errorMessage =
-            error instanceof Error
-              ? error.message
-              : `Failed to publish study for variation ${variation.variation_type}`;
+          error instanceof Error
+          ? error.message
+          : `Failed to publish study for variation ${variation.variation_type}`;
           throw new BadRequestException(errorMessage);
         }
       }
+      
+      await this.creditsService.saveCreditUsage(
+        test.company_id,
+        testId,
+        requiredCredits,
+      );
+
+      await this.updateTestStatus(testId, 'active');
 
       this.logger.log(
         `Successfully published test ${testId} with ${requiredCredits} credits used`,
