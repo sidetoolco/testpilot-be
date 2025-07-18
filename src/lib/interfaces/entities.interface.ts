@@ -9,6 +9,7 @@ export interface TestDemographics {
   locations: string[];
   interests: string[];
   tester_count: number;
+  custom_screening_enabled: boolean;
 }
 
 export interface TestSummary {
@@ -129,6 +130,7 @@ export interface Test {
   status: TestStatus;
   target_participant_count: number;
   custom_screening_enabled: boolean;
+  company_id: string;
 }
 
 export interface Event {
