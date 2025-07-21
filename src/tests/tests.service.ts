@@ -71,7 +71,6 @@ export class TestsService {
       selectQuery: '*',
       condition: 'test_id',
       value: testId,
-      single: true,
     });
   }
 
@@ -175,17 +174,14 @@ export class TestsService {
   }
 
   public async publishTest(testId: string) {
-    let creditsDeducted = false;
-    let prolificStudiesPublished = false;
-    let test: Test | null = null;
-    
     try {
-      test = await this.getTestById(testId);
+      const test = await this.getTestById(testId);
+      const testDemographics = await this.getTestDemographics(testId);
 
-      // Calculate required credits using test properties instead of demographics
+      // Calculate required credits
       const requiredCredits = this.creditsService.calculateTestCredits(
-        test.target_participant_count,
-        test.custom_screening_enabled,
+        testDemographics.tester_count,
+        testDemographics.custom_screening_enabled,
       );
 
       // Check if company has enough credits
@@ -196,6 +192,7 @@ export class TestsService {
         throw new BadRequestException('Insufficient credits.');
       }
 
+      
       const testVariations = await this.getTestVariations(testId);
       
       // Check Prolific balance before publishing any studies
@@ -223,17 +220,12 @@ export class TestsService {
           throw new BadRequestException(errorMessage);
         }
       }
-
-      // Mark that all Prolific studies were successfully published
-      prolificStudiesPublished = true;
-
-      // Deduct credits ONLY after all studies are successfully published
+      
       await this.creditsService.saveCreditUsage(
         test.company_id,
         testId,
         requiredCredits,
       );
-      creditsDeducted = true;
 
       await this.updateTestStatus(testId, 'active');
 
@@ -243,24 +235,6 @@ export class TestsService {
       return testVariations;
     } catch (error) {
       this.logger.error(`Failed to publish test ${testId}:`, error);
-
-      // Only refund credits if:
-      // 1. Credits were deducted AND
-      // 2. Prolific studies were NOT successfully published (to avoid inconsistent state)
-      if (creditsDeducted && !prolificStudiesPublished && test) {
-        try {
-          await this.creditsService.refundCreditUsage(test.company_id, testId);
-          this.logger.log(`Successfully refunded credits for failed test ${testId}`);
-        } catch (refundError) {
-          this.logger.error(`Failed to refund credits for test ${testId}:`, refundError);
-          // Don't throw the refund error as it would mask the original error
-        }
-      } else if (creditsDeducted && prolificStudiesPublished) {
-        // Log warning about inconsistent state when studies are published but local operations fail
-        this.logger.warn(
-          `Test ${testId}: Prolific studies published but local operations failed. Credits will not be refunded to maintain consistency.`,
-        );
-      }
 
       throw error;
     }
