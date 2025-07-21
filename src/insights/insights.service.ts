@@ -153,7 +153,7 @@ export class InsightsService {
         this.testsService.getTestVariations(testId),
       ]);
       //total shopper per session
-      const shopperCount = test.demographics.testerCount;
+      const shopperCount = test.demographics?.testerCount || 0;
 
       const variantChoosen = testVariations.find(
         (v) => v.variation_type === variation,
@@ -474,15 +474,15 @@ export class InsightsService {
         test_id: test.id,
         objective: test.objective,
         test_type: 'Variant-Based',
-        sample_size: demographics.tester_count,
+        sample_size: demographics?.tester_count || 0,
         created_date: test.createdAt,
         search_term: test.searchTerm,
       },
       audience: {
         demographics: {
-          age_ranges: demographics.age_ranges,
-          gender: demographics.genders,
-          location: demographics.locations,
+          age_ranges: demographics?.age_ranges || [],
+          gender: demographics?.genders || [],
+          location: demographics?.locations || [],
         },
       },
       variants: Object.entries(test.variations).reduce(
@@ -573,7 +573,7 @@ export class InsightsService {
         test_id: test.id,
         objective: test.objective,
         test_type: 'Variant-Based',
-        sample_size: demographics.tester_count,
+        sample_size: demographics?.tester_count || 0,
         created_date: test.createdAt,
         search_term: test.searchTerm,
         current_variant: variantType.toUpperCase(),
@@ -581,9 +581,9 @@ export class InsightsService {
       },
       audience: {
         demographics: {
-          age_ranges: demographics.age_ranges,
-          gender: demographics.genders,
-          location: demographics.locations,
+          age_ranges: demographics?.age_ranges || [],
+          gender: demographics?.genders || [],
+          location: demographics?.locations || [],
         },
       },
       current_variant: {

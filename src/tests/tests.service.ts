@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
@@ -24,14 +25,18 @@ import { TestStatus } from './types/test-status.type';
 import { ProlificService } from 'prolific/prolific.service';
 import { TestStatusGateway } from './gateways/test-status.gateway';
 import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
+import { CreditsService } from 'credits/credits.service';
 
 @Injectable()
 export class TestsService {
+  private readonly logger = new Logger(TestsService.name);
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly prolificService: ProlificService,
     private readonly testStatusGateway: TestStatusGateway,
     private readonly testMonitoringService: TestMonitoringService,
+    private readonly creditsService: CreditsService,
   ) {}
 
   public async getTestById(testId: string): Promise<Test> {
@@ -169,33 +174,71 @@ export class TestsService {
   }
 
   public async publishTest(testId: string) {
-    // Update test status to "in progress"
-    await this.updateTestStatus(testId, 'in progress');
+    try {
+      const test = await this.getTestById(testId);
+      const testDemographics = await this.getTestDemographics(testId);
 
-    const testVariations = await this.getTestVariations(testId);
+      // Calculate required credits using test.target_participant_count instead of testDemographics.tester_count
+      // and test.custom_screening_enabled instead of testDemographics.custom_screening_enabled
+      const requiredCredits = this.creditsService.calculateTestCredits(
+        test.target_participant_count,
+        test.custom_screening_enabled,
+      );
 
-    // Check balance before publishing any studies
-    await this.prolificService.checkBalanceForTestPublishing(
-      testVariations.map(({ prolific_test_id }) => prolific_test_id),
-    );
+      // Check if company has enough credits
+      const availableCredits =
+        await this.creditsService.getCompanyAvailableCredits(test.company_id);
 
-    for (const variation of testVariations) {
-      try {
-        await this.prolificService.publishStudy(variation.prolific_test_id);
-        await this.testMonitoringService.scheduleTestCompletionCheck(
-          variation.prolific_test_id,
-          testId,
-        );
-
-        // Wait 30 seconds before processing the next variation
-        await new Promise((resolve) => setTimeout(resolve, 30000));
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : `Failed to publish study for variation ${variation.variation_type}`;
-        throw new BadRequestException(errorMessage);
+      if (availableCredits < requiredCredits) {
+        throw new BadRequestException('Insufficient credits.');
       }
-    }
 
-    return testVariations;
+      
+      const testVariations = await this.getTestVariations(testId);
+      
+      // Check Prolific balance before publishing any studies
+      await this.prolificService.checkBalanceForTestPublishing(
+        testVariations.map(({ prolific_test_id }) => prolific_test_id),
+      );
+      
+      // Publish each variation
+      // TODO: Split this into its own separated function
+      for (const variation of testVariations) {
+        try {
+          await this.prolificService.publishStudy(variation.prolific_test_id);
+          await this.testMonitoringService.scheduleTestCompletionCheck(
+            variation.prolific_test_id,
+            testId,
+          );
+          
+          // Wait 30 second before processing the next variation
+          await new Promise((resolve) => setTimeout(resolve, 30000));
+        } catch (error) {
+          const errorMessage =
+          error instanceof Error
+          ? error.message
+          : `Failed to publish study for variation ${variation.variation_type}`;
+          throw new BadRequestException(errorMessage);
+        }
+      }
+      
+      await this.creditsService.saveCreditUsage(
+        test.company_id,
+        testId,
+        requiredCredits,
+      );
+
+      await this.updateTestStatus(testId, 'active');
+
+      this.logger.log(
+        `Successfully published test ${testId} with ${requiredCredits} credits used`,
+      );
+      return testVariations;
+    } catch (error) {
+      this.logger.error(`Failed to publish test ${testId}:`, error);
+
+      throw error;
+    }
   }
 
   private transformTestData(data: RawTestData): TestData {
