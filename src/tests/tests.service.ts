@@ -176,7 +176,8 @@ export class TestsService {
 
   public async publishTest(testId: string) {
     let creditsDeducted = false;
-    let test: Test;
+    let prolificStudiesPublished = false;
+    let test: Test | null = null;
     
     try {
       test = await this.getTestById(testId);
@@ -223,6 +224,9 @@ export class TestsService {
         }
       }
 
+      // Mark that all Prolific studies were successfully published
+      prolificStudiesPublished = true;
+
       // Deduct credits ONLY after all studies are successfully published
       await this.creditsService.saveCreditUsage(
         test.company_id,
@@ -240,8 +244,10 @@ export class TestsService {
     } catch (error) {
       this.logger.error(`Failed to publish test ${testId}:`, error);
 
-      // Rollback credits if they were deducted but publishing failed
-      if (creditsDeducted && test) {
+      // Only refund credits if:
+      // 1. Credits were deducted AND
+      // 2. Prolific studies were NOT successfully published (to avoid inconsistent state)
+      if (creditsDeducted && !prolificStudiesPublished && test) {
         try {
           await this.creditsService.refundCreditUsage(test.company_id, testId);
           this.logger.log(`Successfully refunded credits for failed test ${testId}`);
@@ -249,6 +255,11 @@ export class TestsService {
           this.logger.error(`Failed to refund credits for test ${testId}:`, refundError);
           // Don't throw the refund error as it would mask the original error
         }
+      } else if (creditsDeducted && prolificStudiesPublished) {
+        // Log warning about inconsistent state when studies are published but local operations fail
+        this.logger.warn(
+          `Test ${testId}: Prolific studies published but local operations failed. Credits will not be refunded to maintain consistency.`,
+        );
       }
 
       throw error;
