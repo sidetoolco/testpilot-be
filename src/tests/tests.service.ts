@@ -71,6 +71,7 @@ export class TestsService {
       selectQuery: '*',
       condition: 'test_id',
       value: testId,
+      single: true,
     });
   }
 
@@ -176,12 +177,11 @@ export class TestsService {
   public async publishTest(testId: string) {
     try {
       const test = await this.getTestById(testId);
-      const testDemographics = await this.getTestDemographics(testId);
 
-      // Calculate required credits
+      // Calculate required credits using test properties instead of demographics
       const requiredCredits = this.creditsService.calculateTestCredits(
-        testDemographics.tester_count,
-        testDemographics.custom_screening_enabled,
+        test.target_participant_count,
+        test.custom_screening_enabled,
       );
 
       // Check if company has enough credits
@@ -192,6 +192,12 @@ export class TestsService {
         throw new BadRequestException('Insufficient credits.');
       }
 
+      // Deduct credits BEFORE publishing any studies to prevent inconsistency
+      await this.creditsService.saveCreditUsage(
+        test.company_id,
+        testId,
+        requiredCredits,
+      );
       
       const testVariations = await this.getTestVariations(testId);
       
@@ -220,12 +226,6 @@ export class TestsService {
           throw new BadRequestException(errorMessage);
         }
       }
-      
-      await this.creditsService.saveCreditUsage(
-        test.company_id,
-        testId,
-        requiredCredits,
-      );
 
       await this.updateTestStatus(testId, 'active');
 
