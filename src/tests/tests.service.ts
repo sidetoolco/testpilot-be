@@ -178,10 +178,11 @@ export class TestsService {
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
 
-      // Calculate required credits
+      // Calculate required credits using test.target_participant_count instead of testDemographics.tester_count
+      // and test.custom_screening_enabled instead of testDemographics.custom_screening_enabled
       const requiredCredits = this.creditsService.calculateTestCredits(
-        testDemographics.tester_count,
-        testDemographics.custom_screening_enabled,
+        test.target_participant_count,
+        test.custom_screening_enabled,
       );
 
       // Check if company has enough credits
