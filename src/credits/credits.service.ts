@@ -193,4 +193,28 @@ export class CreditsService {
         : this.CREDITS_PER_TESTER)
     );
   }
+
+  /**
+   * Refunds credits for a specific test by deleting the credit usage record
+   * @param companyId - The unique identifier of the company
+   * @param testId - The unique identifier of the test
+   * @returns Promise<void> - Resolves when the refund is complete
+   * @throws Error - When database deletion fails
+   */
+  public async refundCreditUsage(
+    companyId: string,
+    testId: string,
+  ): Promise<void> {
+    try {
+      await this.supabaseService.delete(TableName.CREDIT_USAGE, {
+        company_id: companyId,
+        test_id: testId,
+      });
+
+      this.logger.log(`Refunded credits for test ${testId} and company ${companyId}`);
+    } catch (error) {
+      this.logger.error(`Error refunding credits for test ${testId}:`, error);
+      throw error;
+    }
+  }
 }

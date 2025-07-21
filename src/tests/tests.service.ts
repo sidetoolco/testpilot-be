@@ -175,8 +175,11 @@ export class TestsService {
   }
 
   public async publishTest(testId: string) {
+    let creditsDeducted = false;
+    let test: Test;
+    
     try {
-      const test = await this.getTestById(testId);
+      test = await this.getTestById(testId);
 
       // Calculate required credits using test properties instead of demographics
       const requiredCredits = this.creditsService.calculateTestCredits(
@@ -192,13 +195,6 @@ export class TestsService {
         throw new BadRequestException('Insufficient credits.');
       }
 
-      // Deduct credits BEFORE publishing any studies to prevent inconsistency
-      await this.creditsService.saveCreditUsage(
-        test.company_id,
-        testId,
-        requiredCredits,
-      );
-      
       const testVariations = await this.getTestVariations(testId);
       
       // Check Prolific balance before publishing any studies
@@ -227,6 +223,14 @@ export class TestsService {
         }
       }
 
+      // Deduct credits ONLY after all studies are successfully published
+      await this.creditsService.saveCreditUsage(
+        test.company_id,
+        testId,
+        requiredCredits,
+      );
+      creditsDeducted = true;
+
       await this.updateTestStatus(testId, 'active');
 
       this.logger.log(
@@ -235,6 +239,17 @@ export class TestsService {
       return testVariations;
     } catch (error) {
       this.logger.error(`Failed to publish test ${testId}:`, error);
+
+      // Rollback credits if they were deducted but publishing failed
+      if (creditsDeducted && test) {
+        try {
+          await this.creditsService.refundCreditUsage(test.company_id, testId);
+          this.logger.log(`Successfully refunded credits for failed test ${testId}`);
+        } catch (refundError) {
+          this.logger.error(`Failed to refund credits for test ${testId}:`, refundError);
+          // Don't throw the refund error as it would mask the original error
+        }
+      }
 
       throw error;
     }
