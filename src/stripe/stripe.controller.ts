@@ -60,34 +60,13 @@ export class StripeController {
     return await this.stripeService.createCoupon(couponData);
   }
 
-  @Post('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
-  async updateCoupon(
-    @Param('id') couponId: string,
-    @Body() updateData: UpdateCouponDto,
-  ) {
-    return await this.stripeService.updateCoupon(couponId, updateData);
-  }
-
-  @Get('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
-  async retrieveCoupon(@Param('id') couponId: string) {
-    return await this.stripeService.retrieveCoupon(couponId);
-  }
-
   @Get('/coupons')
   @UseGuards(JwtAuthGuard, CompanyGuard)
   async listCoupons(@Query() query: ListCouponsDto) {
     return await this.stripeService.listCoupons(query);
   }
 
-  @Delete('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
-  async deleteCoupon(@Param('id') couponId: string) {
-    return await this.stripeService.deleteCoupon(couponId);
-  }
-
-  // ✅ NEW: Validate coupon by code (for frontend)
+  // ✅ NEW: Validate coupon by code (for frontend) - MUST come before /:id routes
   @Get('/coupons/validate/:code')
   @UseGuards(JwtAuthGuard, CompanyGuard)
   async validateCouponByCode(@Param('code') couponCode: string) {
@@ -125,6 +104,27 @@ export class StripeController {
         error: 'Invalid or expired coupon',
       };
     }
+  }
+
+  @Post('/coupons/:id')
+  @UseGuards(JwtAuthGuard, CompanyGuard)
+  async updateCoupon(
+    @Param('id') couponId: string,
+    @Body() updateData: UpdateCouponDto,
+  ) {
+    return await this.stripeService.updateCoupon(couponId, updateData);
+  }
+
+  @Get('/coupons/:id')
+  @UseGuards(JwtAuthGuard, CompanyGuard)
+  async retrieveCoupon(@Param('id') couponId: string) {
+    return await this.stripeService.retrieveCoupon(couponId);
+  }
+
+  @Delete('/coupons/:id')
+  @UseGuards(JwtAuthGuard, CompanyGuard)
+  async deleteCoupon(@Param('id') couponId: string) {
+    return await this.stripeService.deleteCoupon(couponId);
   }
 
 

@@ -237,13 +237,30 @@ export class StripeService {
         this.logger.log(`Coupon not found by ID ${couponCode}, searching by name...`);
       }
 
-      // Search for coupon by name
-      const coupons = await this.stripe.coupons.list({ limit: 100 });
-      const coupon = coupons.data.find(c => c.name === couponCode);
+      // Search for coupon by name with pagination to handle all coupons
+      let hasMore = true;
+      let startingAfter: string | undefined = undefined;
       
-      if (coupon) {
-        this.logger.log(`Found coupon by name: ${couponCode}`);
-        return coupon;
+      while (hasMore) {
+        const params: Stripe.CouponListParams = { limit: 100 };
+        if (startingAfter) {
+          params.starting_after = startingAfter;
+        }
+        
+        const coupons = await this.stripe.coupons.list(params);
+        
+        // Search in current batch
+        const coupon = coupons.data.find(c => c.name === couponCode);
+        if (coupon) {
+          this.logger.log(`Found coupon by name: ${couponCode}`);
+          return coupon;
+        }
+        
+        // Check if there are more coupons to search
+        hasMore = coupons.has_more;
+        if (hasMore && coupons.data.length > 0) {
+          startingAfter = coupons.data[coupons.data.length - 1].id;
+        }
       }
 
       this.logger.log(`Coupon not found: ${couponCode}`);
