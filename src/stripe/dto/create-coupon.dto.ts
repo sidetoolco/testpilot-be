@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsBoolean, IsEnum, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsBoolean, IsEnum, Min, Max, ValidateIf, Validate } from 'class-validator';
 
 export enum CouponType {
   PERCENT_OFF = 'percent_off',
@@ -12,19 +12,38 @@ export enum CouponDuration {
 }
 
 export class CreateCouponDto {
-  @IsString()
-  id: string;
-
   @IsOptional()
+  @IsString()
+  id?: string;
+
+  @ValidateIf((o) => !o.amount_off)
   @IsNumber()
-  @Min(0)
+  @Min(1)
   @Max(100)
   percent_off?: number;
 
-  @IsOptional()
+  @ValidateIf((o) => !o.percent_off)
   @IsNumber()
-  @Min(0)
+  @Min(1)
   amount_off?: number;
+
+  // Custom validation to ensure exactly one discount type is provided
+  @Validate((value, args) => {
+    const obj = args.object as CreateCouponDto;
+    const hasPercentOff = obj.percent_off !== undefined && obj.percent_off !== null;
+    const hasAmountOff = obj.amount_off !== undefined && obj.amount_off !== null;
+    
+    if (!hasPercentOff && !hasAmountOff) {
+      return false; // At least one discount type is required
+    }
+    
+    if (hasPercentOff && hasAmountOff) {
+      return false; // Only one discount type should be provided
+    }
+    
+    return true;
+  }, { message: 'Exactly one of percent_off or amount_off must be provided' })
+  _discountValidation?: any;
 
   @IsOptional()
   @IsString()

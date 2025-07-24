@@ -106,6 +106,12 @@ export class StripeController {
     }
   }
 
+  @Get('/coupons/:id')
+  @UseGuards(JwtAuthGuard, CompanyGuard)
+  async retrieveCoupon(@Param('id') couponId: string) {
+    return await this.stripeService.retrieveCoupon(couponId);
+  }
+
   @Post('/coupons/:id')
   @UseGuards(JwtAuthGuard, CompanyGuard)
   async updateCoupon(
@@ -113,12 +119,6 @@ export class StripeController {
     @Body() updateData: UpdateCouponDto,
   ) {
     return await this.stripeService.updateCoupon(couponId, updateData);
-  }
-
-  @Get('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
-  async retrieveCoupon(@Param('id') couponId: string) {
-    return await this.stripeService.retrieveCoupon(couponId);
   }
 
   @Delete('/coupons/:id')

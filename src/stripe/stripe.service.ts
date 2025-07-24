@@ -26,6 +26,11 @@ export class StripeService {
     let finalAmount = amount * 100; // Convert to cents
     let couponDetails = null;
 
+    // Ensure minimum base amount (50 cents for USD)
+    if (finalAmount < 50) {
+      throw new BadRequestException('Payment amount must be at least $0.50');
+    }
+
     try {
       // If coupon is provided, validate it and calculate discount
       if (couponId) {
@@ -41,6 +46,11 @@ export class StripeService {
             finalAmount = Math.round(finalAmount * (1 - coupon.percent_off / 100));
           } else if (coupon.amount_off) {
             finalAmount = Math.max(0, finalAmount - coupon.amount_off);
+          }
+
+          // Ensure minimum amount (50 cents for USD)
+          if (finalAmount < 50) {
+            throw new BadRequestException('Coupon discount too large - minimum payment amount is $0.50');
           }
 
           couponDetails = {

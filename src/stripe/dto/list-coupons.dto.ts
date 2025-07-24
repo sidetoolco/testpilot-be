@@ -4,7 +4,10 @@ import { Transform } from 'class-transformer';
 export class ListCouponsDto {
   @IsOptional()
   @IsNumber()
-  @Transform(({ value }) => parseInt(value))
+  @Transform(({ value }) => {
+    const parsed = parseInt(value);
+    return isNaN(parsed) ? undefined : parsed;
+  })
   limit?: number;
 
   @IsOptional()
@@ -17,6 +20,9 @@ export class ListCouponsDto {
 
   @IsOptional()
   @IsNumber()
-  @Transform(({ value }) => parseInt(value))
+  @Transform(({ value }) => {
+    const parsed = parseInt(value);
+    return isNaN(parsed) ? undefined : parsed;
+  })
   created?: number;
 } 
