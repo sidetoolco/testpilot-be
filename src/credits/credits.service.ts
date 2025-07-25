@@ -19,7 +19,6 @@ export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
   private readonly CREDITS_PER_TESTER = 1;
   private readonly CREDITS_PER_TESTER_WITH_CUSTOM_SCREENING = 1.1;
-  private readonly CREDIT_PRICE_CENTS = 49; // Price per credit in cents
 
   constructor(private readonly supabaseService: SupabaseService) {}
 
@@ -178,21 +177,21 @@ export class CreditsService {
         throw new NotFoundException('Company not found');
       }
 
-      // Create a payment transaction record first
+      // Get current credits
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      const newBalance = currentCredits + credits;
+
+      // Create a payment transaction record
       const payment = await this.supabaseService.insert<CreditPayment>(
         TableName.CREDIT_PAYMENTS,
         {
           company_id: companyId,
           stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
-          amount_cents: credits * this.CREDIT_PRICE_CENTS,
+          amount_cents: credits * 49, // Assuming 49 cents per credit (same as Stripe pricing)
           credits_purchased: credits,
           status: PaymentStatus.COMPLETED,
         },
       );
-
-      // Get current credits and update
-      const currentCredits = await this.getCompanyAvailableCredits(companyId);
-      const newBalance = currentCredits + credits;
 
       // Update company credits
       await this.supabaseService.update<CompanyCredits>(
