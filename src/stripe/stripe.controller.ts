@@ -15,7 +15,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { StripeService } from './stripe.service';
-import { CompanyGuard, JwtAuthGuard } from 'auth/guards';
+import { CompanyGuard, JwtAuthGuard, AdminGuard } from 'auth/guards';
 import { CompanyId } from 'auth/decorators';
 import { CreatePaymentIntentDto, CreateCouponDto, UpdateCouponDto, ListCouponsDto } from './dto';
 
@@ -53,15 +53,15 @@ export class StripeController {
     }
   }
 
-  // Coupon endpoints
+  // Coupon endpoints (Admin only)
   @Post('/coupons')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async createCoupon(@Body() couponData: CreateCouponDto) {
     return await this.stripeService.createCoupon(couponData);
   }
 
   @Get('/coupons')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async listCoupons(@Query() query: ListCouponsDto) {
     return await this.stripeService.listCoupons(query);
   }
@@ -107,13 +107,13 @@ export class StripeController {
   }
 
   @Get('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async retrieveCoupon(@Param('id') couponId: string) {
     return await this.stripeService.retrieveCoupon(couponId);
   }
 
   @Post('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async updateCoupon(
     @Param('id') couponId: string,
     @Body() updateData: UpdateCouponDto,
@@ -122,7 +122,7 @@ export class StripeController {
   }
 
   @Delete('/coupons/:id')
-  @UseGuards(JwtAuthGuard, CompanyGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async deleteCoupon(@Param('id') couponId: string) {
     return await this.stripeService.deleteCoupon(couponId);
   }
