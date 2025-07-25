@@ -28,11 +28,11 @@ export class CreditsController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    const pageNum = +page;
-    const limitNum = +limit;
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
 
-    if (pageNum < 1 || limitNum < 1) {
-      throw new BadRequestException('Page and limit must be positive numbers');
+    if (!Number.isInteger(pageNum) || !Number.isInteger(limitNum) || pageNum < 1 || limitNum < 1) {
+      throw new BadRequestException('Page and limit must be positive integers');
     }
 
     const companyId = await this.usersService.getUserCompanyId(userId);
@@ -55,11 +55,11 @@ export class CreditsController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    const pageNum = +page;
-    const limitNum = +limit;
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
 
-    if (pageNum < 1 || limitNum < 1) {
-      throw new BadRequestException('Page and limit must be positive numbers');
+    if (!Number.isInteger(pageNum) || !Number.isInteger(limitNum) || pageNum < 1 || limitNum < 1) {
+      throw new BadRequestException('Page and limit must be positive integers');
     }
 
     return await this.creditsService.getCompanyCreditsDataById(
