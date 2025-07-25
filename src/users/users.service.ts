@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { SupabaseService } from 'supabase/supabase.service';
+import { UserRole } from 'lib/enums';
 
 @Injectable()
 export class UsersService {
@@ -17,5 +18,18 @@ export class UsersService {
     });
 
     return companyId;
+  }
+
+  public async getUserRole(userId: string): Promise<UserRole> {
+    const { role } = await this.supabaseService.getById<{
+      role: UserRole;
+    }>({
+      tableName: TableName.PROFILES,
+      selectQuery: 'role',
+      single: true,
+      id: userId,
+    });
+
+    return role;
   }
 }
