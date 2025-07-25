@@ -29,7 +29,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         throw new Error('User not found');
       }
 
-      return user;
+      // Return the user object with the correct structure
+      // Supabase getUser returns { user: { id: string, ... } }
+      return {
+        id: user.user?.id,
+        ...user.user,
+        ...user
+      };
     } catch (error) {
       throw new UnauthorizedException();
     }
