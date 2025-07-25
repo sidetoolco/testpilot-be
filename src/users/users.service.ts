@@ -18,4 +18,17 @@ export class UsersService {
 
     return companyId;
   }
+
+  public async getUserRole(userId: string): Promise<string> {
+    const { role } = await this.supabaseService.getById<{
+      role: string;
+    }>({
+      tableName: TableName.PROFILES,
+      selectQuery: 'role',
+      single: true,
+      id: userId,
+    });
+
+    return role;
+  }
 }

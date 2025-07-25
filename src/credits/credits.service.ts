@@ -2,6 +2,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
 import { CreditsData, Transaction } from './interfaces';
@@ -64,6 +65,162 @@ export class CreditsService {
     } catch (error) {
       this.logger.error('Error fetching company credits data:', error);
       throw new InternalServerErrorException('Failed to fetch credits data');
+    }
+  }
+
+  /**
+   * Retrieves comprehensive credits data for a specific company (admin use)
+   * @param companyId - The unique identifier of the company
+   * @param page - The page number for pagination (default: 1)
+   * @param limit - The number of transactions per page (default: 20)
+   * @returns Promise<CreditsData> - Object containing total credits and paginated transaction history
+   * @throws NotFoundException - When company is not found
+   * @throws InternalServerErrorException - When database operations fail
+   */
+  public async getCompanyCreditsDataById(
+    companyId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<CreditsData & { company_id: string; company_name: string }> {
+    try {
+      // First verify the company exists
+      const company = await this.supabaseService.getById<{
+        id: string;
+        name: string;
+      }>({
+        tableName: TableName.COMPANIES,
+        selectQuery: 'id, name',
+        single: true,
+        id: companyId,
+      });
+
+      if (!company) {
+        throw new NotFoundException('Company not found');
+      }
+
+      const [total, result] = await Promise.all([
+        this.getCompanyAvailableCredits(companyId),
+        this.supabaseService.rpc<{
+          transactions: Transaction[];
+          count: number;
+        }>(Rpc.GET_COMPANY_TRANSACTION_HISTORY, {
+          p_company_id: companyId,
+          p_page: page,
+          p_limit: limit,
+        }),
+      ]);
+
+      const transactions = result?.transactions ?? [];
+      const totalResults = result?.count ?? 0;
+      const totalPages = Math.ceil(totalResults / limit);
+
+      return {
+        total: total || 0,
+        company_id: company.id,
+        company_name: company.name,
+        transactions: {
+          data: transactions,
+          total: totalResults,
+          page,
+          limit,
+          totalPages,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error fetching company credits data:', error);
+      throw new InternalServerErrorException('Failed to fetch credits data');
+    }
+  }
+
+  /**
+   * Adds credits to a specific company (admin only)
+   * @param companyId - The unique identifier of the company
+   * @param credits - The number of credits to add
+   * @param description - Description of the credit addition
+   * @returns Promise<object> - Object containing success status, message, transaction, and new balance
+   * @throws NotFoundException - When company is not found
+   * @throws InternalServerErrorException - When database operations fail
+   */
+  public async addCreditsToCompany(
+    companyId: string,
+    credits: number,
+    description: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    transaction: {
+      id: string;
+      type: string;
+      credits: number;
+      status: string;
+      description: string;
+      created_at: string;
+    };
+    new_balance: number;
+  }> {
+    try {
+      // First verify the company exists
+      const company = await this.supabaseService.getById<{
+        id: string;
+        name: string;
+      }>({
+        tableName: TableName.COMPANIES,
+        selectQuery: 'id, name',
+        single: true,
+        id: companyId,
+      });
+
+      if (!company) {
+        throw new NotFoundException('Company not found');
+      }
+
+      // Get current credits
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      const newBalance = currentCredits + credits;
+
+      // Create a payment transaction record
+      const payment = await this.supabaseService.insert<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        {
+          company_id: companyId,
+          stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
+          amount_cents: credits * 49, // Assuming 49 cents per credit (same as Stripe pricing)
+          credits_purchased: credits,
+          status: PaymentStatus.COMPLETED,
+        },
+      );
+
+      // Update company credits
+      await this.supabaseService.update<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { total: newBalance },
+        [{ key: 'company_id', value: companyId }],
+      );
+
+      this.logger.log(`Admin added ${credits} credits to company ${companyId}. New balance: ${newBalance}`);
+
+      return {
+        success: true,
+        message: 'Credits added successfully',
+        transaction: {
+          id: payment[0].id,
+          type: 'payment',
+          credits: credits,
+          status: 'completed',
+          description: description,
+          created_at: payment[0].created_at,
+        },
+        new_balance: newBalance,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error adding credits to company:', error);
+      throw new InternalServerErrorException('Failed to add credits');
     }
   }
 

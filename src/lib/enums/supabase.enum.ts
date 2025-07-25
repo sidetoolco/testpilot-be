@@ -20,6 +20,7 @@ export enum TableName {
   COMPANY_CREDITS = 'company_credits',
   CREDIT_PAYMENTS = 'credit_payments',
   CREDIT_USAGE = 'credit_usage',
+  COMPANIES = 'companies',
 }
 
 export enum Rpc {
