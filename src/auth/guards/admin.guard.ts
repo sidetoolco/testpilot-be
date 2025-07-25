@@ -15,7 +15,7 @@ export class AdminGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const { user } = request.user;
+    const user = request.user;
 
     try {
       // For now, allow all authenticated users to access admin endpoints
