@@ -7,6 +7,7 @@ import { ProductsModule } from 'products/products.module';
 import { SupabaseModule } from 'supabase/supabase.module';
 import { OpenAiModule } from 'open-ai/open-ai.module';
 import { AdalineModule } from 'adaline/adaline.module';
+import { UsersModule } from 'users/users.module';
 
 @Module({
   providers: [InsightsService],
@@ -18,6 +19,7 @@ import { AdalineModule } from 'adaline/adaline.module';
     SupabaseModule,
     OpenAiModule,
     AdalineModule,
+    UsersModule,
   ],
 })
 export class InsightsModule {}

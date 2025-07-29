@@ -1119,4 +1119,44 @@ export class InsightsService {
       comparisonResponses,
     );
   }
+
+  public async updateInsightById(
+    insightId: number,
+    updateData: {
+      comparison_between_variants?: string;
+      purchase_drivers?: string;
+      competitive_insights?: string;
+      recommendations?: string;
+      comment_summary?: string;
+      sendEmail?: boolean;
+      edited?: boolean;
+    },
+  ) {
+    try {
+      this.logger.log(`Updating insight with ID ${insightId}`);
+
+      // First, check if the insight exists
+      const existingInsight = await this.supabaseService.findOne<AiInsight>(
+        TableName.AI_INSIGHTS,
+        { id: insightId },
+      );
+
+      if (!existingInsight) {
+        throw new NotFoundException(`Insight with ID ${insightId} not found`);
+      }
+
+      // Update only the provided fields
+      const updatedInsight = await this.supabaseService.update<AiInsight>(
+        TableName.AI_INSIGHTS,
+        updateData,
+        [{ key: 'id', value: insightId }],
+      );
+
+      this.logger.log(`Successfully updated insight with ID ${insightId}`);
+      return updatedInsight[0]; // Return the updated insight
+    } catch (error) {
+      this.logger.error(`Failed to update insight with ID ${insightId}:`, error);
+      throw error;
+    }
+  }
 }

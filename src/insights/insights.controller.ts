@@ -1,22 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { InsightsService } from './insights.service';
-import { JwtAuthGuard } from 'auth/guards/auth.guard';
-import { GenerateStudyInsightsDto } from './dto';
+import { JwtAuthGuard, AdminGuard } from 'auth/guards';
+import { GenerateStudyInsightsDto, UpdateInsightDto } from './dto';
 
 @Controller('insights')
 export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
-
-  @UseGuards(JwtAuthGuard)
-  @Get('/:testId') 
-  getInsightsDataFromTest(
-    @Param('testId') testId: string,
-    @Query('type') insightsType?: string
-  ) {
-    return insightsType === 'ai' 
-      ? this.insightsService.getAiInsights(testId) 
-      : this.insightsService.getInsightsData(testId);
-  }
 
   @Post()
   generateStudyInsights(@Body() dto: GenerateStudyInsightsDto) {
@@ -27,5 +16,25 @@ export class InsightsController {
   @Post('/:testId')
   generateAiInsights(@Param('testId') testId: string) {
     return this.insightsService.saveAiInsights(testId);
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Put('/:insightId')
+  updateInsight(
+    @Param('insightId') insightId: string,
+    @Body() updateData: UpdateInsightDto,
+  ) {
+    return this.insightsService.updateInsightById(Number(insightId), updateData);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('/:testId') 
+  getInsightsDataFromTest(
+    @Param('testId') testId: string,
+    @Query('type') insightsType?: string
+  ) {
+    return insightsType === 'ai' 
+      ? this.insightsService.getAiInsights(testId) 
+      : this.insightsService.getInsightsData(testId);
   }
 }
