@@ -1184,6 +1184,9 @@ export class InsightsService {
       comparison_between_variants?: string;
       purchase_drivers?: string;
       competitive_insights?: string;
+      competitive_insights_a?: string;
+      competitive_insights_b?: string;
+      competitive_insights_c?: string;
       recommendations?: string;
       comment_summary?: string;
       sendEmail?: boolean;
@@ -1203,15 +1206,24 @@ export class InsightsService {
         throw new NotFoundException(`Insight with ID ${insightId} not found`);
       }
 
+      // Strip undefined keys so we only update what the client actually sent
+      const payload = Object.fromEntries(
+        Object.entries(updateData).filter(([, v]) => v !== undefined),
+      ) as Partial<typeof updateData>;
+
       // Update only the provided fields
       const updatedInsight = await this.supabaseService.update<AiInsight>(
         TableName.AI_INSIGHTS,
-        updateData,
+        payload,
         [{ key: 'id', value: insightId }],
       );
 
+      if (!updatedInsight) {
+        throw new NotFoundException(`Insight with ID ${insightId} not found`);
+      }
+
       this.logger.log(`Successfully updated insight with ID ${insightId}`);
-      return updatedInsight[0]; // Return the updated insight
+      return updatedInsight; // Return the updated insight
     } catch (error) {
       this.logger.error(`Failed to update insight with ID ${insightId}:`, error);
       throw error;

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { InsightsService } from './insights.service';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
 import { GenerateStudyInsightsDto, UpdateInsightDto } from './dto';
@@ -21,10 +21,10 @@ export class InsightsController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('/:insightId')
   updateInsight(
-    @Param('insightId') insightId: string,
+    @Param('insightId', ParseIntPipe) insightId: number,
     @Body() updateData: UpdateInsightDto,
   ) {
-    return this.insightsService.updateInsightById(Number(insightId), updateData);
+    return this.insightsService.updateInsightById(insightId, updateData);
   }
 
   @UseGuards(JwtAuthGuard)
