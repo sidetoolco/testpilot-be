@@ -114,10 +114,13 @@ export interface AiInsight {
   id: number;
   created_at: string;
   test_id: string;
-  variant_type: string;
+  variant_type?: string; // Made optional since we'll have one record per test
   comparison_between_variants: string;
   purchase_drivers: string;
-  competitive_insights: string;
+  competitive_insights?: string; // Keep for backward compatibility
+  competitive_insights_a?: string;
+  competitive_insights_b?: string;
+  competitive_insights_c?: string;
   recommendations: string;
   comment_summary?: string;
   sendEmail?: boolean;

@@ -54,41 +54,46 @@ export class InsightsService {
       
       const testVariations = await this.testsService.getTestVariations(testId);
 
-      const results = [];
-
-      // Generate AI insights for each variant
+      // Generate cross-variant purchase drivers once using full test data
+      const crossVariantInsights = await this.generateCrossVariantInsights(testId, objective);
+      
+      // Generate variant-specific competitive insights
+      const variantInsights: Record<string, any> = {};
+      
       for (const variation of testVariations) {
         try {
           this.logger.log(
-            `Generating AI insights for variant ${variation.variation_type}`,
+            `Generating competitive insights for variant ${variation.variation_type}`,
           );
-          const aiInsights = await this.generateAiInsightsForVariant(
+          const competitiveInsights = await this.generateCompetitiveInsightsForVariant(
             testId,
             objective,
             variation.variation_type,
           );
-
-          const savedInsight = await this.supabaseService.upsert<AiInsight>(
-            TableName.AI_INSIGHTS,
-            {
-              test_id: testId,
-              variant_type: variation.variation_type,
-              ...aiInsights,
-            },
-            'test_id,variant_type',
-          );
-
-          results.push(savedInsight);
+          
+          variantInsights[variation.variation_type] = competitiveInsights;
         } catch (error) {
           this.logger.error(
-            `Failed to generate AI insights for variant ${variation.variation_type}:`,
+            `Failed to generate competitive insights for variant ${variation.variation_type}:`,
             error,
           );
           // Continue with other variants even if one fails
         }
       }
 
-      return results;
+      // Combine cross-variant insights with variant-specific competitive insights
+      const combinedInsights = this.combineVariantInsights(crossVariantInsights, variantInsights, testVariations);
+      
+      const savedInsight = await this.supabaseService.upsert<AiInsight>(
+        TableName.AI_INSIGHTS,
+        {
+          test_id: testId,
+          ...combinedInsights,
+        },
+        'test_id',
+      );
+
+      return [savedInsight];
     } catch (error) {
       this.logger.error(
         `Failed to generate or save AI insights for test ${testId}:`,
@@ -822,88 +827,6 @@ export class InsightsService {
     }
   }
 
-  private async generateAiInsightsForVariant(
-    testId: string,
-    testObjective: TestObjective,
-    variantType: string,
-  ) {
-    const formattedData = await this.getInsightsDataForVariant(
-      testId,
-      variantType,
-    );
-
-    // Generate comment summary for this specific variant
-    let commentSummary: string | null = null;
-
-    try {
-      commentSummary = await this.generateCommentSummaryForVariant(
-        testId,
-        variantType,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to generate comment summary for variant ${variantType} in test ${testId}:`,
-        error,
-      );
-    }
-
-    const {
-      config: { provider, model },
-      messages,
-    } = await this.adalineService.getPromptDeployment(testObjective);
-
-    if (provider !== 'openai') {
-      throw new BadRequestException(
-        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
-      );
-    }
-
-    // Format messages for OpenAI
-    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
-      // Concatenate all text blocks in content
-      const content = msg.content.map((block) => block.value).join('\n\n');
-
-      return {
-        role: msg.role,
-        content,
-      } as ChatCompletionMessageParam;
-    });
-
-    const unformattedInsights = await this.openAiService.createChatCompletion(
-      [
-        ...openAiMessages,
-        {
-          role: 'user',
-          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
-        },
-      ],
-      { model },
-    );
-
-    try {
-      const formattedResult = {
-        ...insightsFormatter(unformattedInsights),
-        comment_summary: commentSummary,
-      };
-      return formattedResult;
-    } catch (formatError) {
-      this.logger.error(
-        `Failed to format variant insights for test ${testId}, variant ${variantType}:`,
-        formatError,
-      );
-      
-      // Fallback to a basic format if the formatter fails
-      const fallbackResult = {
-        comparison_between_variants: unformattedInsights,
-        purchase_drivers: '',
-        competitive_insights: '',
-        recommendations: '',
-        comment_summary: commentSummary,
-      };
-      return fallbackResult;
-    }
-  }
-
   private async calculateShareOfClicks(
     testId: string,
     variantProductId: string,
@@ -1118,5 +1041,221 @@ export class InsightsService {
       surveyResponses,
       comparisonResponses,
     );
+  }
+
+  private async generateCrossVariantInsights(
+    testId: string,
+    testObjective: TestObjective,
+  ) {
+    // Use full test data to generate cross-variant purchase drivers
+    const formattedData = await this.getInsightsData(testId);
+
+    // Generate comment summary for all variants
+    let commentSummary: string | null = null;
+
+    try {
+      commentSummary = await this.generateCommentSummary(testId);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to generate comment summary for test ${testId}:`,
+        error,
+      );
+    }
+
+    const {
+      config: { provider, model },
+      messages,
+    } = await this.adalineService.getPromptDeployment(testObjective);
+
+    if (provider !== 'openai') {
+      throw new BadRequestException(
+        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+      );
+    }
+
+    // Format messages for OpenAI
+    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+      // Concatenate all text blocks in content
+      const content = msg.content.map((block) => block.value).join('\n\n');
+
+      return {
+        role: msg.role,
+        content,
+      } as ChatCompletionMessageParam;
+    });
+
+    const unformattedInsights = await this.openAiService.createChatCompletion(
+      [
+        ...openAiMessages,
+        {
+          role: 'user',
+          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+        },
+      ],
+      { model },
+    );
+
+    try {
+      const formattedResult = {
+        ...insightsFormatter(unformattedInsights),
+        comment_summary: commentSummary,
+      };
+      return formattedResult;
+    } catch (formatError) {
+      this.logger.error(
+        `Failed to format cross-variant insights for test ${testId}:`,
+        formatError,
+      );
+      
+      // Fallback to a basic format if the formatter fails
+      const fallbackResult = {
+        comparison_between_variants: unformattedInsights,
+        purchase_drivers: '',
+        competitive_insights: '',
+        recommendations: '',
+        comment_summary: commentSummary,
+      };
+      return fallbackResult;
+    }
+  }
+
+  private async generateCompetitiveInsightsForVariant(
+    testId: string,
+    testObjective: TestObjective,
+    variantType: string,
+  ) {
+    // Use variant-specific data for competitive insights
+    const formattedData = await this.getInsightsDataForVariant(testId, variantType);
+
+    const {
+      config: { provider, model },
+      messages,
+    } = await this.adalineService.getPromptDeployment(testObjective);
+
+    if (provider !== 'openai') {
+      throw new BadRequestException(
+        `Unsupported LLM provider: ${provider}. Only 'openai' is supported.`,
+      );
+    }
+
+    // Format messages for OpenAI
+    const openAiMessages = messages.map<ChatCompletionMessageParam>((msg) => {
+      // Concatenate all text blocks in content
+      const content = msg.content.map((block) => block.value).join('\n\n');
+
+      return {
+        role: msg.role,
+        content,
+      } as ChatCompletionMessageParam;
+    });
+
+    const unformattedInsights = await this.openAiService.createChatCompletion(
+      [
+        ...openAiMessages,
+        {
+          role: 'user',
+          content: `Here is the test data to analyze:\n\n${JSON.stringify(formattedData)}`,
+        },
+      ],
+      { model },
+    );
+
+    try {
+      const formattedResult = insightsFormatter(unformattedInsights);
+      return {
+        competitive_insights: formattedResult.competitive_insights,
+      };
+    } catch (formatError) {
+      this.logger.error(
+        `Failed to format competitive insights for variant ${variantType} in test ${testId}:`,
+        formatError,
+      );
+      
+      // Fallback to a basic format if the formatter fails
+      return {
+        competitive_insights: unformattedInsights,
+      };
+    }
+  }
+
+  public async updateInsightById(
+    insightId: number,
+    updateData: {
+      comparison_between_variants?: string;
+      purchase_drivers?: string;
+      competitive_insights?: string;
+      competitive_insights_a?: string;
+      competitive_insights_b?: string;
+      competitive_insights_c?: string;
+      recommendations?: string;
+      comment_summary?: string;
+      sendEmail?: boolean;
+      edited?: boolean;
+    },
+  ) {
+    try {
+      this.logger.log(`Updating insight with ID ${insightId}`);
+
+      // First, check if the insight exists
+      const existingInsight = await this.supabaseService.findOne<AiInsight>(
+        TableName.AI_INSIGHTS,
+        { id: insightId },
+      );
+
+      if (!existingInsight) {
+        throw new NotFoundException(`Insight with ID ${insightId} not found`);
+      }
+
+      // Strip undefined keys so we only update what the client actually sent
+      const payload = Object.fromEntries(
+        Object.entries(updateData).filter(([, v]) => v !== undefined),
+      ) as Partial<typeof updateData>;
+
+      // Update only the provided fields
+      const updatedInsight = await this.supabaseService.update<AiInsight>(
+        TableName.AI_INSIGHTS,
+        payload,
+        [{ key: 'id', value: insightId }],
+      );
+
+      if (!updatedInsight) {
+        throw new NotFoundException(`Insight with ID ${insightId} not found`);
+      }
+
+      this.logger.log(`Successfully updated insight with ID ${insightId}`);
+      return updatedInsight; // Return the updated insight
+    } catch (error) {
+      this.logger.error(`Failed to update insight with ID ${insightId}:`, error);
+      throw error;
+    }
+  }
+
+  private combineVariantInsights(
+    crossVariantInsights: any,
+    variantInsights: Record<string, any>,
+    testVariations: TestVariation[],
+  ) {
+    // Start with cross-variant insights (purchase drivers, comparison, recommendations)
+    const combinedInsights: any = {
+      comparison_between_variants: crossVariantInsights.comparison_between_variants || '',
+      purchase_drivers: crossVariantInsights.purchase_drivers || '',
+      recommendations: crossVariantInsights.recommendations || '',
+      comment_summary: crossVariantInsights.comment_summary || '',
+      competitive_insights: crossVariantInsights.competitive_insights || '',
+    };
+
+    // Add variant-specific competitive insights
+    testVariations.forEach((variation) => {
+      const variantKey = `competitive_insights_${variation.variation_type}`;
+      const variantInsight = variantInsights[variation.variation_type];
+      
+      if (variantInsight && variantInsight.competitive_insights) {
+        combinedInsights[variantKey] = variantInsight.competitive_insights;
+      } else {
+        combinedInsights[variantKey] = null;
+      }
+    });
+
+    return combinedInsights;
   }
 }
