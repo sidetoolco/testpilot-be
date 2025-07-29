@@ -23,6 +23,24 @@ export class UpdateInsightDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(10000)
+  competitive_insights_a?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
+  competitive_insights_b?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
+  competitive_insights_c?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
   recommendations?: string;
 
   @IsOptional()
