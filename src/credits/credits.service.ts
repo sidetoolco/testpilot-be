@@ -187,17 +187,23 @@ export class CreditsService {
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
       const creditsDifference = credits - currentCredits;
 
-      // Create a payment transaction record for audit trail
-      const payment = await this.supabaseService.insert<CreditPayment>(
-        TableName.CREDIT_PAYMENTS,
-        {
-          company_id: companyId,
-          stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
-          amount_cents: creditsDifference * 49, // Assuming 49 cents per credit (same as Stripe pricing)
-          credits_purchased: creditsDifference,
-          status: PaymentStatus.COMPLETED,
-        },
-      );
+      let payment = null;
+
+      // Only create a payment record if credits are being added (positive difference)
+      // For credit reductions, we'll just update the balance without a payment record
+      if (creditsDifference > 0) {
+        // Create a payment transaction record for audit trail
+        payment = await this.supabaseService.insert<CreditPayment>(
+          TableName.CREDIT_PAYMENTS,
+          {
+            company_id: companyId,
+            stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
+            amount_cents: creditsDifference * 49, // Assuming 49 cents per credit (same as Stripe pricing)
+            credits_purchased: creditsDifference,
+            status: PaymentStatus.COMPLETED,
+          },
+        );
+      }
 
       // Update company credits to the new value
       await this.supabaseService.update<CompanyCredits>(
@@ -211,13 +217,20 @@ export class CreditsService {
       return {
         success: true,
         message: 'Credits updated successfully',
-        transaction: {
+        transaction: payment ? {
           id: payment[0].id,
           type: 'payment',
           credits: creditsDifference,
           status: 'completed',
           description: description,
           created_at: payment[0].created_at,
+        } : {
+          id: `admin_${Date.now()}`,
+          type: 'admin_adjustment',
+          credits: creditsDifference,
+          status: 'completed',
+          description: description,
+          created_at: new Date().toISOString(),
         },
         new_balance: credits,
       };
