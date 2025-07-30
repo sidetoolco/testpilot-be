@@ -129,11 +129,20 @@ export interface AiInsight {
 export interface Test {
   id: string;
   name: string;
-  objective: TestObjective;
+  description?: string;
   status: TestStatus;
+  search_term: string;
+  settings: Record<string, any>;
+  company_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  complete_email: boolean;
+  objective: TestObjective;
+  step?: string;
   target_participant_count: number;
   custom_screening_enabled: boolean;
-  company_id: string;
+  block: boolean;
 }
 
 export interface Event {

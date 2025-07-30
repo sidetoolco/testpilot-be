@@ -10,8 +10,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { TestsService } from './tests.service';
-import { JwtAuthGuard } from 'auth/guards/auth.guard';
-import { CreateTestDto } from './dto';
+import { JwtAuthGuard, AdminGuard } from 'auth/guards';
+import { CreateTestDto, UpdateTestBlockDto } from './dto';
 import { ProlificService } from 'prolific/prolific.service';
 
 @UseGuards(JwtAuthGuard)
@@ -52,5 +52,18 @@ export class TestsController {
     await this.testsService.publishTest(testId);
 
     return HttpStatus.OK;
+  }
+
+  @Post('/block')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async updateTestBlockStatus(@Body() dto: UpdateTestBlockDto) {
+    await this.testsService.updateTestBlockStatus(dto.testId, dto.block);
+
+    return {
+      message: `Test block status updated successfully`,
+      testId: dto.testId,
+      block: dto.block,
+      note: 'Block status can only be updated for tests with complete status. Block can be set to true or false.',
+    };
   }
 }

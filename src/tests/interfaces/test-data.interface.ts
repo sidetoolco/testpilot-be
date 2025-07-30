@@ -8,6 +8,7 @@ export interface RawTestData {
   created_at: string;
   objective: TestObjective;
   updated_at: string;
+  block: boolean;
   competitors: Array<{
     product: {
       id: string;
@@ -90,6 +91,7 @@ export interface TestData {
   status: 'draft' | 'active' | 'complete';
   objective: string;
   searchTerm: string;
+  block: boolean;
   competitors: Array<Product>;
   variations: {
     a: ProductWithProlificStatus | null;

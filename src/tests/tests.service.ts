@@ -165,12 +165,37 @@ export class TestsService {
     }
   }
 
-  public updateTestStatus(testId: string, status: TestStatus) {
+  public async updateTestStatus(testId: string, status: TestStatus) {
     this.testStatusGateway.emitTestStatusUpdate(testId, status);
 
-    return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
+    // Prepare update payload
+    const updatePayload: { status: TestStatus; block?: boolean } = { status };
+
+    // Only set block = true if transitioning TO 'complete' status from a non-complete status
+    // This preserves any manual admin settings for tests that are already complete
+    if (status === 'complete') {
+      const currentTest = await this.getTestById(testId);
+      if (currentTest.status !== 'complete') {
+        updatePayload.block = true;
+      }
+    }
+
+    return this.supabaseService.update<Test>(TableName.TESTS, updatePayload, [
       { key: 'id', value: testId },
     ]);
+  }
+
+  public async updateTestBlockStatus(testId: string, block: boolean) {
+    try {
+      const result = await this.supabaseService.update<Test>(TableName.TESTS, { block }, [
+        { key: 'id', value: testId },
+        { key: 'status', value: 'complete' }, 
+      ]);
+      
+      return result;
+    } catch (error) {
+      throw new BadRequestException('Block status can only be updated for tests with complete status');
+    }
   }
 
   public async publishTest(testId: string) {
@@ -178,8 +203,6 @@ export class TestsService {
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
 
-      // Calculate required credits using test.target_participant_count instead of testDemographics.tester_count
-      // and test.custom_screening_enabled instead of testDemographics.custom_screening_enabled
       const requiredCredits = this.creditsService.calculateTestCredits(
         test.target_participant_count,
         test.custom_screening_enabled,
@@ -255,6 +278,7 @@ export class TestsService {
       objective: data.objective,
       status: data.status,
       searchTerm: data.search_term,
+      block: data.block,
       competitors: data.competitors?.map((c) => c.product) || [],
       variations: {
         a: this.getVariationWithProduct(data.variations, 'a'),
