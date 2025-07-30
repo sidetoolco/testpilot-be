@@ -168,7 +168,16 @@ export class TestsService {
   public updateTestStatus(testId: string, status: TestStatus) {
     this.testStatusGateway.emitTestStatusUpdate(testId, status);
 
-    return this.supabaseService.update<Test>(TableName.TESTS, { status }, [
+    // Prepare update payload
+    const updatePayload: { status: TestStatus; block?: boolean } = { status };
+
+    // If status is changing to 'complete', automatically set block = true
+    // as per the business logic: "Initially set to true when test becomes complete"
+    if (status === 'complete') {
+      updatePayload.block = true;
+    }
+
+    return this.supabaseService.update<Test>(TableName.TESTS, updatePayload, [
       { key: 'id', value: testId },
     ]);
   }

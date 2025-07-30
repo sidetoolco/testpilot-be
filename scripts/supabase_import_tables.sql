@@ -292,7 +292,7 @@ CREATE TABLE public.tests (
     updated_at timestamp with time zone DEFAULT now(),
     complete_email boolean DEFAULT false,
     objective public.test_objective,
-    block boolean DEFAULT true,
+    block boolean DEFAULT false,
     CONSTRAINT tests_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'complete'::text, 'needs review'::text])))
 );
 COMMENT ON COLUMN public.tests.block IS 'Controls whether the test is blocked. Only relevant for tests with complete status. Initially set to true when test becomes complete, but admins can change it to true or false.';
