@@ -141,7 +141,7 @@ export class CreditsService {
    * @param companyId - The unique identifier of the company
    * @param credits - The new total number of credits to set
    * @param description - Description of the credit modification
-   * @returns Promise<object> - Object containing success status, message, and new balance
+   * @returns Promise<object> - Object containing success status, message, transaction, and new balance
    * @throws NotFoundException - When company is not found
    * @throws InternalServerErrorException - When database operations fail
    */
@@ -152,6 +152,14 @@ export class CreditsService {
   ): Promise<{
     success: boolean;
     message: string;
+    transaction: {
+      id: string;
+      type: string;
+      credits: number;
+      status: string;
+      description: string;
+      created_at: string;
+    };
     new_balance: number;
   }> {
     try {
@@ -175,8 +183,21 @@ export class CreditsService {
         throw new BadRequestException('Credits cannot be negative');
       }
 
-      // Get current credits for logging
+      // Get current credits for logging and calculating the difference
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      const creditsDifference = credits - currentCredits;
+
+      // Create a payment transaction record for audit trail
+      const payment = await this.supabaseService.insert<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        {
+          company_id: companyId,
+          stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
+          amount_cents: creditsDifference * 49, // Assuming 49 cents per credit (same as Stripe pricing)
+          credits_purchased: creditsDifference,
+          status: PaymentStatus.COMPLETED,
+        },
+      );
 
       // Update company credits to the new value
       await this.supabaseService.update<CompanyCredits>(
@@ -185,11 +206,19 @@ export class CreditsService {
         [{ key: 'company_id', value: companyId }],
       );
 
-      this.logger.log(`Admin set credits for company ${companyId} from ${currentCredits} to ${credits}`);
+      this.logger.log(`Admin set credits for company ${companyId} from ${currentCredits} to ${credits} (difference: ${creditsDifference})`);
 
       return {
         success: true,
         message: 'Credits updated successfully',
+        transaction: {
+          id: payment[0].id,
+          type: 'payment',
+          credits: creditsDifference,
+          status: 'completed',
+          description: description,
+          created_at: payment[0].created_at,
+        },
         new_balance: credits,
       };
     } catch (error) {
