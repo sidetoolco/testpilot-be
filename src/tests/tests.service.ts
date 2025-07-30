@@ -183,17 +183,19 @@ export class TestsService {
   }
 
   public async updateTestBlockStatus(testId: string, block: boolean) {
-    // First, get the current test to check its status
-    const test = await this.getTestById(testId);
-    
     // Only allow updating block status for tests with 'complete' status
-    if (test.status !== 'complete') {
+    // The status filter ensures atomicity and prevents race conditions
+    const result = await this.supabaseService.update<Test>(TableName.TESTS, { block }, [
+      { key: 'id', value: testId },
+      { key: 'status', value: 'complete' }, // guarantees atomicity
+    ]);
+    
+    // If no rows were updated, the test doesn't exist or isn't complete
+    if (!result) {
       throw new BadRequestException('Block status can only be updated for tests with complete status');
     }
     
-    return this.supabaseService.update<Test>(TableName.TESTS, { block }, [
-      { key: 'id', value: testId },
-    ]);
+    return result;
   }
 
   public async publishTest(testId: string) {
