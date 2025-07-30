@@ -186,19 +186,16 @@ export class TestsService {
   }
 
   public async updateTestBlockStatus(testId: string, block: boolean) {
-    // Only allow updating block status for tests with 'complete' status
-    // The status filter ensures atomicity and prevents race conditions
-    const result = await this.supabaseService.update<Test>(TableName.TESTS, { block }, [
-      { key: 'id', value: testId },
-      { key: 'status', value: 'complete' }, // guarantees atomicity
-    ]);
-    
-    // If no rows were updated, the test doesn't exist or isn't complete
-    if (!result) {
+    try {
+      const result = await this.supabaseService.update<Test>(TableName.TESTS, { block }, [
+        { key: 'id', value: testId },
+        { key: 'status', value: 'complete' }, 
+      ]);
+      
+      return result;
+    } catch (error) {
       throw new BadRequestException('Block status can only be updated for tests with complete status');
     }
-    
-    return result;
   }
 
   public async publishTest(testId: string) {
@@ -206,8 +203,6 @@ export class TestsService {
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
 
-      // Calculate required credits using test.target_participant_count instead of testDemographics.tester_count
-      // and test.custom_screening_enabled instead of testDemographics.custom_screening_enabled
       const requiredCredits = this.creditsService.calculateTestCredits(
         test.target_participant_count,
         test.custom_screening_enabled,
