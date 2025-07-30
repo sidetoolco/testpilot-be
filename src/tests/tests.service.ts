@@ -173,6 +173,20 @@ export class TestsService {
     ]);
   }
 
+  public async updateTestBlockStatus(testId: string, block: boolean) {
+    // First, get the current test to check its status
+    const test = await this.getTestById(testId);
+    
+    // Only allow updating block status for tests with 'complete' status
+    if (test.status !== 'complete') {
+      throw new BadRequestException('Block status can only be updated for tests with complete status');
+    }
+    
+    return this.supabaseService.update<Test>(TableName.TESTS, { block }, [
+      { key: 'id', value: testId },
+    ]);
+  }
+
   public async publishTest(testId: string) {
     try {
       const test = await this.getTestById(testId);
@@ -255,6 +269,7 @@ export class TestsService {
       objective: data.objective,
       status: data.status,
       searchTerm: data.search_term,
+      block: data.block,
       competitors: data.competitors?.map((c) => c.product) || [],
       variations: {
         a: this.getVariationWithProduct(data.variations, 'a'),

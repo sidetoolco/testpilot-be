@@ -5,6 +5,7 @@ export const GET_TEST_DATA_QUERY = `
           search_term,
           created_at,
           updated_at,
+          block,
           competitors:test_competitors(
             product:amazon_products(id, title, image_url, price)
           ),
@@ -40,4 +41,4 @@ export const GET_TEST_DATA_QUERY = `
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
           )
-`;
+        `;
