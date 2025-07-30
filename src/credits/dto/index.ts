@@ -1,1 +1,1 @@
-export * from './add-credits.dto'; 
+export * from './edit-credits.dto'; 

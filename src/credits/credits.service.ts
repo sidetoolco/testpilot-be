@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -136,29 +137,21 @@ export class CreditsService {
   }
 
   /**
-   * Adds credits to a specific company (admin only)
+   * Sets credits for a specific company to a specific value (admin only)
    * @param companyId - The unique identifier of the company
-   * @param credits - The number of credits to add
-   * @param description - Description of the credit addition
-   * @returns Promise<object> - Object containing success status, message, transaction, and new balance
+   * @param credits - The new total number of credits to set
+   * @param description - Description of the credit modification
+   * @returns Promise<object> - Object containing success status, message, and new balance
    * @throws NotFoundException - When company is not found
    * @throws InternalServerErrorException - When database operations fail
    */
-  public async addCreditsToCompany(
+  public async editCreditsForCompany(
     companyId: string,
     credits: number,
     description: string,
   ): Promise<{
     success: boolean;
     message: string;
-    transaction: {
-      id: string;
-      type: string;
-      credits: number;
-      status: string;
-      description: string;
-      created_at: string;
-    };
     new_balance: number;
   }> {
     try {
@@ -177,50 +170,34 @@ export class CreditsService {
         throw new NotFoundException('Company not found');
       }
 
-      // Get current credits
+      // Prevent negative credits
+      if (credits < 0) {
+        throw new BadRequestException('Credits cannot be negative');
+      }
+
+      // Get current credits for logging
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
-      const newBalance = currentCredits + credits;
 
-      // Create a payment transaction record
-      const payment = await this.supabaseService.insert<CreditPayment>(
-        TableName.CREDIT_PAYMENTS,
-        {
-          company_id: companyId,
-          stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
-          amount_cents: credits * 49, // Assuming 49 cents per credit (same as Stripe pricing)
-          credits_purchased: credits,
-          status: PaymentStatus.COMPLETED,
-        },
-      );
-
-      // Update company credits
+      // Update company credits to the new value
       await this.supabaseService.update<CompanyCredits>(
         TableName.COMPANY_CREDITS,
-        { total: newBalance },
+        { total: credits },
         [{ key: 'company_id', value: companyId }],
       );
 
-      this.logger.log(`Admin added ${credits} credits to company ${companyId}. New balance: ${newBalance}`);
+      this.logger.log(`Admin set credits for company ${companyId} from ${currentCredits} to ${credits}`);
 
       return {
         success: true,
-        message: 'Credits added successfully',
-        transaction: {
-          id: payment[0].id,
-          type: 'payment',
-          credits: credits,
-          status: 'completed',
-          description: description,
-          created_at: payment[0].created_at,
-        },
-        new_balance: newBalance,
+        message: 'Credits updated successfully',
+        new_balance: credits,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error('Error adding credits to company:', error);
-      throw new InternalServerErrorException('Failed to add credits');
+      this.logger.error('Error editing credits for company:', error);
+      throw new InternalServerErrorException('Failed to edit credits');
     }
   }
 
