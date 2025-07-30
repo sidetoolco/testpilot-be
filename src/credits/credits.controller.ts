@@ -12,7 +12,7 @@ import { CreditsService } from './credits.service';
 import { UsersService } from 'users/users.service';
 import { CurrentUser } from 'auth/decorators';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
-import { AddCreditsDto } from './dto';
+import { EditCreditsDto } from './dto';
 
 @Controller('credits')
 @UseGuards(JwtAuthGuard)
@@ -69,13 +69,13 @@ export class CreditsController {
     );
   }
 
-  @Post('admin/add')
+  @Post('admin/edit')
   @UseGuards(AdminGuard)
-  async addCreditsToCompany(@Body() addCreditsDto: AddCreditsDto) {
-    return await this.creditsService.addCreditsToCompany(
-      addCreditsDto.company_id,
-      addCreditsDto.credits,
-      addCreditsDto.description,
+  async editCreditsForCompany(@Body() editCreditsDto: EditCreditsDto) {
+    return await this.creditsService.editCreditsForCompany(
+      editCreditsDto.company_id,
+      editCreditsDto.credits,
+      editCreditsDto.description,
     );
   }
 }

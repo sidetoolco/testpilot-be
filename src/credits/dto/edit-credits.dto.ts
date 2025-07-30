@@ -1,13 +1,13 @@
-import { IsNotEmpty, IsNumber, IsPositive, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
-export class AddCreditsDto {
+export class EditCreditsDto {
   @IsNotEmpty()
   @IsUUID()
   company_id: string;
 
   @IsNotEmpty()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   credits: number;
 
   @IsNotEmpty()
