@@ -165,16 +165,19 @@ export class TestsService {
     }
   }
 
-  public updateTestStatus(testId: string, status: TestStatus) {
+  public async updateTestStatus(testId: string, status: TestStatus) {
     this.testStatusGateway.emitTestStatusUpdate(testId, status);
 
     // Prepare update payload
     const updatePayload: { status: TestStatus; block?: boolean } = { status };
 
-    // If status is changing to 'complete', automatically set block = true
-    // as per the business logic: "Initially set to true when test becomes complete"
+    // Only set block = true if transitioning TO 'complete' status from a non-complete status
+    // This preserves any manual admin settings for tests that are already complete
     if (status === 'complete') {
-      updatePayload.block = true;
+      const currentTest = await this.getTestById(testId);
+      if (currentTest.status !== 'complete') {
+        updatePayload.block = true;
+      }
     }
 
     return this.supabaseService.update<Test>(TableName.TESTS, updatePayload, [
