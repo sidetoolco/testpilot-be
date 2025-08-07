@@ -252,36 +252,6 @@ export class ProlificService {
     return await this.testsService.getTestIdByProlificStudyId(prolificStudyId);
   }
 
-  public async deleteAllTestVariants(testId: string) {
-    try {
-      // Get all test variations for this test ID
-      const testVariations = await this.testsService.getTestVariations(testId);
-      
-      if (!testVariations || testVariations.length === 0) {
-        return;
-      }
-
-      // Delete each variant's Prolific study
-      const deletePromises = testVariations.map(async (variation) => {
-        if (!variation.prolific_test_id) {
-          return;
-        }
-
-        try {
-          await this.deleteStudy(variation.prolific_test_id);
-        } catch (error) {
-          this.logger.warn(`Failed to delete variant ${variation.prolific_test_id}: ${error.message}`);
-          // Continue with other variants
-        }
-      });
-
-      // Wait for all deletions to complete
-      await Promise.all(deletePromises);
-    } catch (error) {
-      throw error;
-    }
-  }
-
   public async publishStudy(studyId: string) {
     try {
       // First check if study exists and get current status

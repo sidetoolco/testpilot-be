@@ -9,6 +9,7 @@ import {
   Param,
 } from '@nestjs/common';
 import { ProlificService } from './prolific.service';
+import { TestsService } from 'tests/tests.service';
 import { ScreenOutSubmissionDto } from './dto';
 import { StudyStatus } from './types';
 
@@ -16,7 +17,10 @@ import { StudyStatus } from './types';
 export class ProlificController {
   private readonly logger = new Logger(ProlificController.name);
 
-  constructor(private readonly prolificService: ProlificService) {}
+  constructor(
+    private readonly prolificService: ProlificService,
+    private readonly testsService: TestsService,
+  ) {}
 
   @Post('/submission/screen-out')
   async screenOutSubmission(
@@ -78,8 +82,8 @@ export class ProlificController {
       throw new BadRequestException(`No TestPilot test found for study ${baseStudyId}`);
     }
 
-    // Delete all variants of the test
-    await this.prolificService.deleteAllTestVariants(testId);
+    // Delete all variants of the test using TestsService
+    await this.testsService.deleteTest(testId);
 
     this.logger.log(`All variants of study ${studyId} deleted successfully`);
     return HttpStatus.OK;
