@@ -270,7 +270,8 @@ export class ProlificService {
         try {
           await this.deleteStudy(variation.prolific_test_id);
         } catch (error) {
-          // Don't throw error, just continue with other variants
+          this.logger.warn(`Failed to delete variant ${variation.prolific_test_id}: ${error.message}`);
+          // Continue with other variants
         }
       });
 

@@ -74,6 +74,10 @@ export class ProlificController {
     // Get the test ID from the Prolific study ID
     const testId = await this.prolificService.getTestIdByProlificStudyId(baseStudyId);
 
+    if (!testId) {
+      throw new BadRequestException(`No TestPilot test found for study ${baseStudyId}`);
+    }
+
     // Delete all variants of the test
     await this.prolificService.deleteAllTestVariants(testId);
 

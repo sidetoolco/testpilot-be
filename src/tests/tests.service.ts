@@ -215,14 +215,6 @@ export class TestsService {
       }
 
       // Delete all Supabase data
-      await this.deleteTestAndAllData(testId);
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  public async deleteTestAndAllData(testId: string) {
-    try {
       // Delete test_times first since it references testers_session
       try {
         // Get session IDs for this test

@@ -82,11 +82,8 @@ export class TestsController {
         throw new BadRequestException('Test not found');
       }
       
-      // 2. Delete all Prolific studies for this test
-      await this.prolificService.deleteAllTestVariants(testId);
-      
-      // 3. Delete all Supabase data for this test
-      await this.testsService.deleteTestAndAllData(testId);
+      // 2. Delete all Prolific studies and Supabase data for this test
+      await this.testsService.deleteTest(testId);
       
       return { statusCode: 200, message: 'OK' };
       
