@@ -185,6 +185,98 @@ export class TestsService {
     ]);
   }
 
+  public async deleteTest(testId: string) {
+    try {
+      // Get test to check if it exists and get company info
+      const test = await this.getTestById(testId);
+      
+      // Get all test variations
+      const testVariations = await this.getTestVariations(testId);
+      
+      // Delete all Prolific studies for this test
+      for (const variation of testVariations) {
+        if (variation.prolific_test_id) {
+          try {
+            // Check if study exists and is in draft status before deleting
+            try {
+              const study = await this.prolificService.getStudy(variation.prolific_test_id);
+              if (study.status === 'ACTIVE' || study.status === 'COMPLETED') {
+                continue;
+              }
+            } catch (studyError) {
+              // Continue with deletion
+            }
+            
+            await this.prolificService.deleteStudy(variation.prolific_test_id);
+          } catch (error) {
+            // Continue with other variants even if one fails
+          }
+        }
+      }
+
+      // Delete all Supabase data
+      await this.deleteTestAndAllData(testId);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  public async deleteTestAndAllData(testId: string) {
+    try {
+      // Delete test_times first since it references testers_session
+      try {
+        // Get session IDs for this test
+        const testSessions = await this.supabaseService.getByCondition<{ id: string }[]>({
+          tableName: TableName.TESTERS_SESSION,
+          selectQuery: 'id',
+          condition: 'test_id',
+          value: testId,
+          single: false,
+        });
+
+        if (testSessions && testSessions.length > 0) {
+          const sessionIds = testSessions.map(session => session.id);
+          
+          // Delete test_times records that reference these session IDs
+          try {
+            await this.supabaseService.delete(TableName.TEST_TIMES, { 
+              testers_session: sessionIds 
+            });
+          } catch (deleteError) {
+            // Continue with deletion even if test_times deletion fails
+          }
+        }
+      } catch (error) {
+        // Continue with deletion even if test_times deletion fails
+      }
+
+      // Delete related data from Supabase with individual error handling
+      const deletePromises = [
+        // Related Data Tables (delete first)
+        this.supabaseService.delete(TableName.RESPONSES_SURVEYS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.RESPONSES_COMPARISONS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.TESTERS_SESSION, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.INSIGHT_STATUS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.AI_INSIGHTS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.TEST_SUMMARY, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.PURCHASE_DRIVERS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.COMPETITIVE_INSIGHTS, { test_id: testId }).catch(error => {}),
+        
+        // Primary Test Data (delete last)
+        this.supabaseService.delete(TableName.TEST_VARIATIONS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.TEST_COMPETITORS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.TEST_DEMOGRAPHICS, { test_id: testId }).catch(error => {}),
+      ];
+
+      await Promise.all(deletePromises);
+
+      // Finally delete the test itself
+      await this.supabaseService.delete(TableName.TESTS, { id: testId });
+    } catch (error) {
+      throw error;
+    }
+  }
+
   public async updateTestBlockStatus(testId: string, block: boolean) {
     try {
       const result = await this.supabaseService.update<Test>(TableName.TESTS, { block }, [

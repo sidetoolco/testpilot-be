@@ -7,7 +7,10 @@ import {
   Inject,
   Param,
   Post,
+  Delete,
   UseGuards,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { TestsService } from './tests.service';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
@@ -17,6 +20,8 @@ import { ProlificService } from 'prolific/prolific.service';
 @UseGuards(JwtAuthGuard)
 @Controller('tests')
 export class TestsController {
+  private readonly logger = new Logger(TestsController.name);
+
   constructor(
     private readonly testsService: TestsService,
     @Inject(forwardRef(() => ProlificService))
@@ -65,5 +70,32 @@ export class TestsController {
       block: dto.block,
       note: 'Block status can only be updated for tests with complete status. Block can be set to true or false.',
     };
+  }
+
+  @Delete('/:testId')
+  @UseGuards(JwtAuthGuard)
+  async deleteTest(@Param('testId') testId: string) {
+    try {
+      // 1. Validate test exists and user has permission
+      const test = await this.testsService.getTestById(testId);
+      if (!test) {
+        throw new BadRequestException('Test not found');
+      }
+      
+      // 2. Delete all Prolific studies for this test
+      await this.prolificService.deleteAllTestVariants(testId);
+      
+      // 3. Delete all Supabase data for this test
+      await this.testsService.deleteTestAndAllData(testId);
+      
+      return { statusCode: 200, message: 'OK' };
+      
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new BadRequestException(`Failed to delete test: ${error.message}`);
+    }
   }
 }
