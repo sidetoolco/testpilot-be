@@ -208,6 +208,50 @@ export class ProlificService {
     await this.testsService.updateTestStatus(testId, 'active');
   }
 
+  public async deleteStudy(studyId: string) {
+    try {
+      // First check if study exists and get current status
+      const study = await this.getStudy(studyId);
+      
+      if (!study) {
+        throw new BadRequestException(`Study ${studyId} not found`);
+      }
+
+      // Check if study is published (cannot delete published studies)
+      if (study.status === 'ACTIVE' || study.status === 'COMPLETED') {
+        throw new BadRequestException(`Cannot delete published study ${studyId}. Only draft studies can be deleted.`);
+      }
+
+      await this.httpClient.delete(`/studies/${studyId}/`);
+      
+      this.logger.log(`Study ${studyId} deleted successfully from Prolific`);
+    } catch (error) {
+      this.logger.error(`Failed to delete study ${studyId}:`, error);
+      
+      // Provide more specific error messages
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Handle Prolific API specific errors
+      if (error.response?.status === 404) {
+        throw new BadRequestException(`Study ${studyId} not found in Prolific`);
+      }
+      
+      if (error.response?.status === 403) {
+        throw new BadRequestException(`Study ${studyId} cannot be deleted (may be published or in use)`);
+      }
+      
+      throw new BadRequestException(
+        `Failed to delete study ${studyId}: ${error.message || 'Unknown error'}`,
+      );
+    }
+  }
+
+  public async getTestIdByProlificStudyId(prolificStudyId: string): Promise<string> {
+    return await this.testsService.getTestIdByProlificStudyId(prolificStudyId);
+  }
+
   public async publishStudy(studyId: string) {
     try {
       // First check if study exists and get current status

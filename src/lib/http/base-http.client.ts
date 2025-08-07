@@ -123,7 +123,17 @@ export abstract class BaseHttpClient {
       throw new Error(errorData);
     }
     
-    return response.json();
+    // Handle empty responses for DELETE requests
+    const text = await response.text();
+    if (!text) {
+      return {} as T;
+    }
+    
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {} as T;
+    }
   }
 
   private async getErrorData(response: Response): Promise<string> {
