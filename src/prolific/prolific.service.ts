@@ -364,8 +364,6 @@ export class ProlificService {
   public async handleAllScreenedOutSubmissions(studyId: string, studyInternalName: string): Promise<void> {
     try {
       const submissions = await this.getStudySubmissions(studyId);
-      
-      // Get all submissions that are already screened out (regardless of time taken)
       const screenedOutSubmissions = submissions.filter(submission => 
         submission.status === 'SCREENED_OUT'
       );
@@ -375,7 +373,6 @@ export class ProlificService {
         return;
       }
 
-      // Transition each screened out submission to SCREENED_OUT status using the Prolific API
       for (const submission of screenedOutSubmissions) {
         try {
           await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
@@ -394,7 +391,6 @@ export class ProlificService {
         }
       }
 
-      // Increase available places for all screened out submissions since they need replacement
       await this.increaseStudyPlacesBy(studyId, screenedOutSubmissions.length, 'screened-out-replacements');
 
       this.logger.log(
@@ -413,8 +409,6 @@ export class ProlificService {
   public async handleAwaitingReviewSubmissions(studyId: string, studyInternalName: string): Promise<void> {
     try {
       const submissions = await this.getStudySubmissions(studyId);
-      
-      // Get all submissions that are awaiting review
       const awaitingReviewSubmissions = submissions.filter(submission => 
         submission.status === 'AWAITING REVIEW'
       );
@@ -424,14 +418,12 @@ export class ProlificService {
         return;
       }
 
-      let rejectedCount = 0;
       let screenedOutCount = 0;
+      let rejectedCount = 0;
 
-      // Process each awaiting review submission
       for (const submission of awaitingReviewSubmissions) {
         try {
           if (!submission.study_code || submission.study_code.trim() === '') {
-            // No completion code - reject
             await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
               action: 'REJECT',
               message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
@@ -443,7 +435,6 @@ export class ProlificService {
             );
             rejectedCount++;
           } else if (submission.time_taken === 0 || submission.time_taken === null) {
-            // 0 time taken - screen out (no payment, needs replacement)
             await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
               action: 'COMPLETE',
               completion_code: 'SCREENED_OUT'
@@ -454,7 +445,6 @@ export class ProlificService {
             );
             screenedOutCount++;
           } else if (submission.time_taken < 120) {
-            // Very quick submission (less than 1 minute) - likely low effort
             await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
               action: 'REJECT',
               message: 'Submission rejected due to insufficient time spent on the study. Please ensure you complete all tasks thoroughly.',
@@ -466,7 +456,6 @@ export class ProlificService {
             );
             rejectedCount++;
           } else {
-            // Has completion code and reasonable time taken - approve
             await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
               action: 'APPROVE'
             });
@@ -483,7 +472,6 @@ export class ProlificService {
         }
       }
 
-      // Increase available places for screened out submissions since they need replacement
       if (screenedOutCount > 0) {
         await this.increaseStudyPlacesBy(studyId, screenedOutCount, 'screened-out-from-awaiting-review');
         this.logger.log(
@@ -491,7 +479,6 @@ export class ProlificService {
         );
       }
 
-      // Increase available places for rejected submissions since they need replacement
       if (rejectedCount > 0) {
         await this.increaseStudyPlacesBy(studyId, rejectedCount, 'rejected-from-awaiting-review');
         this.logger.log(
