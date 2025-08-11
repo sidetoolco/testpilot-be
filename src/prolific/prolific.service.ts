@@ -168,6 +168,19 @@ export class ProlificService {
         peripheral_requirements: [],
         filters,
         is_custom_screening: createTestDto.customScreeningEnabled,
+        submissions_config: {
+          // Prevent automatic approval of submissions without proper completion codes
+          // This ensures that submissions with >2 minutes but no proper code get flagged for review
+          auto_rejection_categories: [
+            'NO_CODE',
+            'BAD_CODE', 
+            'NO_DATA',
+            'FAILED_INSTRUCTIONS',
+            'FAILED_CHECK',
+            'LOW_EFFORT',
+            'MALINGERING'
+          ]
+        },
       };
 
       return await this.httpClient.post<ProlificStudy>('/studies', studyData);
@@ -245,6 +258,167 @@ export class ProlificService {
       throw new BadRequestException(
         `Failed to delete study ${studyId}: ${error.message || 'Unknown error'}`,
       );
+    }
+  }
+
+
+  public async handleRejectionsAndIncreasePlaces(
+    studyId: string,
+    studyInternalName: string,
+  ): Promise<void> {
+    try {
+      const submissions = await this.getStudySubmissions(studyId);
+      
+      const submissionsToReplace = submissions.filter(submission => {
+        if (submission.time_taken === 0 || submission.time_taken === null) {
+          return true;
+        }
+        
+        if ((submission.status === 'SCREENED_OUT' && submission.time_taken > 120) ||
+            (submission.status === 'AWAITING_REVIEW' && submission.time_taken > 120)) {
+          return true;
+        }
+
+        if (!submission.study_code || submission.study_code === '') {
+          return true;
+        }
+        
+        return false;
+      });
+
+      if (submissionsToReplace.length === 0) {
+        this.logger.log(`No submissions that need replacement found for study ${studyId}`);
+        return;
+      }
+
+      const currentStudy = await this.getStudy(studyId);
+      const currentPlaces = currentStudy.total_available_places;
+      
+      const placesToAdd = submissionsToReplace.length;
+      const newPlaces = currentPlaces + placesToAdd;
+
+      await this.httpClient.patch(`/studies/${studyId}/`, {
+        total_available_places: newPlaces,
+      });
+
+      this.logger.log(
+        `Increased available places for study ${studyId} from ${currentPlaces} to ${newPlaces} due to ${placesToAdd} submissions that need replacement`,
+      );
+
+      submissionsToReplace.forEach(submission => {
+        let reason = '';
+        
+        if (submission.time_taken === 0 || submission.time_taken === null) {
+          reason = '0 time taken (technical issue)';
+        } else if ((submission.status === 'SCREENED_OUT' && submission.time_taken > 120) ||
+                   (submission.status === 'AWAITING_REVIEW' && submission.time_taken > 120)) {
+          reason = `submission with ${submission.time_taken} seconds (${submission.status} - needs replacement)`;
+        } else if (!submission.study_code || submission.study_code === '') {
+          reason = 'no completion code (NO_CODE)';
+        }
+        
+        this.logger.log(
+          `Submission ${submission.id} (participant ${submission.participant_id}) - ${reason} - increased available places by 1`
+        );
+      });
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle rejections and increase places for study ${studyId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+
+  public async handleNoCodeSubmissions(studyId: string): Promise<void> {
+    try {
+      const submissions = await this.getStudySubmissions(studyId);
+      const noCodeSubmissions = submissions.filter(submission => 
+        !submission.study_code || 
+        submission.study_code === '' ||
+        submission.status === 'AWAITING_REVIEW' 
+      );
+
+      if (noCodeSubmissions.length === 0) {
+        this.logger.log(`No NO_CODE submissions found for study ${studyId}`);
+        return;
+      }
+
+      for (const submission of noCodeSubmissions) {
+        try {
+          await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+            action: 'REJECT',
+            message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
+            rejection_category: 'NO_CODE'
+          });
+
+          this.logger.log(
+            `Rejected submission ${submission.id} (participant ${submission.participant_id}) with NO_CODE category`
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to reject submission ${submission.id}:`,
+            error
+          );
+        }
+      }
+
+      await this.increaseStudyAvailablePlaces(studyId, 'no-code-handled');
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle NO_CODE submissions for study ${studyId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  public async increasePlacesForRejectedSubmissions(studyId: string): Promise<void> {
+    try {
+      const submissions = await this.getStudySubmissions(studyId);
+      
+      const submissionsToReplace = submissions.filter(submission => {
+        // Case 1: 0 time taken (technical issues)
+        if (submission.time_taken === 0 || submission.time_taken === null) {
+          return true;
+        }
+        
+        // Case 2: Screened out users (all screened out users must be replaced)
+        if (submission.status === 'SCREENED_OUT') {
+          return true;
+        }
+        
+        // Case 3: NO_CODE submissions (no completion code)
+        if (!submission.study_code || submission.study_code === '') {
+          return true;
+        }
+        
+        return false;
+      });
+
+      if (submissionsToReplace.length === 0) {
+        this.logger.log(`No submissions that need replacement found for study ${studyId}`);
+        return;
+      }
+
+      // Increase available places for each submission that needs replacement
+      for (const _ of submissionsToReplace) {
+        await this.increaseStudyAvailablePlaces(studyId, 'replacement-needed');
+      }
+
+      this.logger.log(
+        `Increased available places for study ${studyId} due to ${submissionsToReplace.length} submissions that need replacement`
+      );
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to increase places for rejected submissions in study ${studyId}:`,
+        error,
+      );
+      throw error;
     }
   }
 
