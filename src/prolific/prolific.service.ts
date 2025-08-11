@@ -267,53 +267,31 @@ export class ProlificService {
     studyInternalName: string,
   ): Promise<void> {
     try {
+      // Get all submissions for the study
       const submissions = await this.getStudySubmissions(studyId);
       
-      const submissionsToReplace = submissions.filter(submission => {
-        if (submission.time_taken === 0 || submission.time_taken === null) {
-          return true;
-        }
-        
-        if ((submission.status === 'SCREENED_OUT' && submission.time_taken > 120) ||
-            (submission.status === 'AWAITING_REVIEW' && submission.time_taken > 120)) {
-          return true;
-        }
-
-        if (!submission.study_code || submission.study_code === '') {
-          return true;
-        }
-        
-        return false;
-      });
+      // Use shared helper for consistent replacement logic
+      const submissionsToReplace = submissions.filter(submission => 
+        this.needsReplacement(submission)
+      );
 
       if (submissionsToReplace.length === 0) {
         this.logger.log(`No submissions that need replacement found for study ${studyId}`);
         return;
       }
 
-      const currentStudy = await this.getStudy(studyId);
-      const currentPlaces = currentStudy.total_available_places;
-      
-      const placesToAdd = submissionsToReplace.length;
-      const newPlaces = currentPlaces + placesToAdd;
+      // Use atomic helper to increase places by the total count needed
+      await this.increaseStudyPlacesBy(studyId, submissionsToReplace.length, 'replacements-needed');
 
-      await this.httpClient.patch(`/studies/${studyId}/`, {
-        total_available_places: newPlaces,
-      });
-
-      this.logger.log(
-        `Increased available places for study ${studyId} from ${currentPlaces} to ${newPlaces} due to ${placesToAdd} submissions that need replacement`,
-      );
-
+      // Log details of what was processed
       submissionsToReplace.forEach(submission => {
         let reason = '';
         
         if (submission.time_taken === 0 || submission.time_taken === null) {
           reason = '0 time taken (technical issue)';
-        } else if ((submission.status === 'SCREENED_OUT' && submission.time_taken > 120) ||
-                   (submission.status === 'AWAITING_REVIEW' && submission.time_taken > 120)) {
-          reason = `submission with ${submission.time_taken} seconds (${submission.status} - needs replacement)`;
-        } else if (!submission.study_code || submission.study_code === '') {
+        } else if (submission.status === 'SCREENED_OUT') {
+          reason = `screened out (needs replacement)`;
+        } else if (!submission.study_code || submission.study_code.trim() === '') {
           reason = 'no completion code (NO_CODE)';
         }
         
@@ -335,10 +313,12 @@ export class ProlificService {
   public async handleNoCodeSubmissions(studyId: string): Promise<void> {
     try {
       const submissions = await this.getStudySubmissions(studyId);
+      
+      // Only target submissions that actually lack a completion code
+      // Don't include AWAITING_REVIEW status as it could have valid codes
       const noCodeSubmissions = submissions.filter(submission => 
         !submission.study_code || 
-        submission.study_code === '' ||
-        submission.status === 'AWAITING_REVIEW' 
+        submission.study_code.trim() === ''
       );
 
       if (noCodeSubmissions.length === 0) {
@@ -346,6 +326,7 @@ export class ProlificService {
         return;
       }
 
+      // Reject each NO_CODE submission using the Prolific API
       for (const submission of noCodeSubmissions) {
         try {
           await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
@@ -365,7 +346,11 @@ export class ProlificService {
         }
       }
 
-      await this.increaseStudyAvailablePlaces(studyId, 'no-code-handled');
+      // After rejecting NO_CODE submissions, increase available places
+      const count = noCodeSubmissions.length;
+      if (count > 0) {
+        await this.increaseStudyPlacesBy(studyId, count, 'no-code-handled');
+      }
 
     } catch (error) {
       this.logger.error(
@@ -376,51 +361,7 @@ export class ProlificService {
     }
   }
 
-  public async increasePlacesForRejectedSubmissions(studyId: string): Promise<void> {
-    try {
-      const submissions = await this.getStudySubmissions(studyId);
-      
-      const submissionsToReplace = submissions.filter(submission => {
-        // Case 1: 0 time taken (technical issues)
-        if (submission.time_taken === 0 || submission.time_taken === null) {
-          return true;
-        }
-        
-        // Case 2: Screened out users (all screened out users must be replaced)
-        if (submission.status === 'SCREENED_OUT') {
-          return true;
-        }
-        
-        // Case 3: NO_CODE submissions (no completion code)
-        if (!submission.study_code || submission.study_code === '') {
-          return true;
-        }
-        
-        return false;
-      });
 
-      if (submissionsToReplace.length === 0) {
-        this.logger.log(`No submissions that need replacement found for study ${studyId}`);
-        return;
-      }
-
-      // Increase available places for each submission that needs replacement
-      for (const _ of submissionsToReplace) {
-        await this.increaseStudyAvailablePlaces(studyId, 'replacement-needed');
-      }
-
-      this.logger.log(
-        `Increased available places for study ${studyId} due to ${submissionsToReplace.length} submissions that need replacement`
-      );
-
-    } catch (error) {
-      this.logger.error(
-        `Failed to increase places for rejected submissions in study ${studyId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
 
   public async getTestIdByProlificStudyId(prolificStudyId: string): Promise<string> {
     return await this.testsService.getTestIdByProlificStudyId(prolificStudyId);
@@ -668,4 +609,57 @@ export class ProlificService {
 
     return formattedDemographics;
   }
+
+  /**
+   * Helper method to determine if a submission needs replacement
+   * Ensures consistent logic across all methods
+   */
+  private needsReplacement(submission: any): boolean {
+    // Case 1: 0 time taken (technical issues)
+    if (submission.time_taken === 0 || submission.time_taken === null) {
+      return true;
+    }
+    
+    // Case 2: Screened out users (all screened out users must be replaced)
+    if (submission.status === 'SCREENED_OUT') {
+      return true;
+    }
+    
+    // Case 3: NO_CODE submissions (no completion code)
+    if (!submission.study_code || submission.study_code.trim() === '') {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Atomic-style helper to increase study places by a delta
+   * Prevents race conditions by getting current value and updating in one operation
+   */
+  private async increaseStudyPlacesBy(studyId: string, delta: number, reason: string): Promise<void> {
+    try {
+      const study = await this.getStudy(studyId);
+      const newPlaces = study.total_available_places + delta;
+      
+      await this.httpClient.patch(`/studies/${studyId}/`, {
+        total_available_places: newPlaces,
+      });
+      
+      this.logger.log(
+        `Increased places by ${delta} for study ${studyId} (${reason}): ${study.total_available_places} → ${newPlaces}`
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to increase places by ${delta} for study ${studyId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Handle rejections and increase available places for submissions that need replacement
+   * Uses the actual Prolific API to handle rejections and then increases study places
+   */
 }
