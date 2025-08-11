@@ -361,6 +361,156 @@ export class ProlificService {
     }
   }
 
+  public async handleAllScreenedOutSubmissions(studyId: string, studyInternalName: string): Promise<void> {
+    try {
+      const submissions = await this.getStudySubmissions(studyId);
+      
+      // Get all submissions that are already screened out (regardless of time taken)
+      const screenedOutSubmissions = submissions.filter(submission => 
+        submission.status === 'SCREENED_OUT'
+      );
+
+      if (screenedOutSubmissions.length === 0) {
+        this.logger.log(`No screened out submissions found for study ${studyId}`);
+        return;
+      }
+
+      // Transition each screened out submission to SCREENED_OUT status using the Prolific API
+      for (const submission of screenedOutSubmissions) {
+        try {
+          await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+            action: 'COMPLETE',
+            completion_code: 'SCREENED_OUT'
+          });
+
+          this.logger.log(
+            `Transitioned submission ${submission.id} (participant ${submission.participant_id}) to SCREENED_OUT status (time taken: ${submission.time_taken || 0}s)`
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to transition submission ${submission.id} to SCREENED_OUT:`,
+            error
+          );
+        }
+      }
+
+      // Increase available places for all screened out submissions since they need replacement
+      await this.increaseStudyPlacesBy(studyId, screenedOutSubmissions.length, 'screened-out-replacements');
+
+      this.logger.log(
+        `Increased available places by ${screenedOutSubmissions.length} for study ${studyId} due to screened out submissions`
+      );
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle screened out submissions for study ${studyId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  public async handleAwaitingReviewSubmissions(studyId: string, studyInternalName: string): Promise<void> {
+    try {
+      const submissions = await this.getStudySubmissions(studyId);
+      
+      // Get all submissions that are awaiting review
+      const awaitingReviewSubmissions = submissions.filter(submission => 
+        submission.status === 'AWAITING REVIEW'
+      );
+
+      if (awaitingReviewSubmissions.length === 0) {
+        this.logger.log(`No AWAITING REVIEW submissions found for study ${studyId}`);
+        return;
+      }
+
+      let rejectedCount = 0;
+      let screenedOutCount = 0;
+
+      // Process each awaiting review submission
+      for (const submission of awaitingReviewSubmissions) {
+        try {
+          if (!submission.study_code || submission.study_code.trim() === '') {
+            // No completion code - reject
+            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+              action: 'REJECT',
+              message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
+              rejection_category: 'NO_CODE'
+            });
+
+            this.logger.log(
+              `Rejected submission ${submission.id} (participant ${submission.participant_id}) with NO_CODE category`
+            );
+            rejectedCount++;
+          } else if (submission.time_taken === 0 || submission.time_taken === null) {
+            // 0 time taken - screen out (no payment, needs replacement)
+            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+              action: 'COMPLETE',
+              completion_code: 'SCREENED_OUT'
+            });
+
+            this.logger.log(
+              `Screened out submission ${submission.id} (participant ${submission.participant_id}) due to 0 time taken`
+            );
+            screenedOutCount++;
+          } else if (submission.time_taken < 120) {
+            // Very quick submission (less than 1 minute) - likely low effort
+            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+              action: 'REJECT',
+              message: 'Submission rejected due to insufficient time spent on the study. Please ensure you complete all tasks thoroughly.',
+              rejection_category: 'LOW_EFFORT'
+            });
+
+            this.logger.log(
+              `Rejected submission ${submission.id} (participant ${submission.participant_id}) due to very quick completion (${submission.time_taken}s) with LOW_EFFORT category`
+            );
+            rejectedCount++;
+          } else {
+            // Has completion code and reasonable time taken - approve
+            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+              action: 'APPROVE'
+            });
+
+            this.logger.log(
+              `Approved submission ${submission.id} (participant ${submission.participant_id}) with completion code and time taken: ${submission.time_taken}s`
+            );
+          }
+        } catch (error) {
+          this.logger.error(
+            `Failed to transition submission ${submission.id}:`,
+            error
+          );
+        }
+      }
+
+      // Increase available places for screened out submissions since they need replacement
+      if (screenedOutCount > 0) {
+        await this.increaseStudyPlacesBy(studyId, screenedOutCount, 'screened-out-from-awaiting-review');
+        this.logger.log(
+          `Increased available places by ${screenedOutCount} for study ${studyId} due to screened out submissions from awaiting review`
+        );
+      }
+
+      // Increase available places for rejected submissions since they need replacement
+      if (rejectedCount > 0) {
+        await this.increaseStudyPlacesBy(studyId, rejectedCount, 'rejected-from-awaiting-review');
+        this.logger.log(
+          `Increased available places by ${rejectedCount} for study ${studyId} due to rejected submissions from awaiting review`
+        );
+      }
+
+      this.logger.log(
+        `Processed ${awaitingReviewSubmissions.length} AWAITING REVIEW submissions: ${screenedOutCount} screened out, ${rejectedCount} rejected, ${awaitingReviewSubmissions.length - screenedOutCount - rejectedCount} approved`
+      );
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle awaiting review submissions for study ${studyId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
 
 
   public async getTestIdByProlificStudyId(prolificStudyId: string): Promise<string> {
@@ -657,9 +807,4 @@ export class ProlificService {
       throw error;
     }
   }
-
-  /**
-   * Handle rejections and increase available places for submissions that need replacement
-   * Uses the actual Prolific API to handle rejections and then increases study places
-   */
 }
