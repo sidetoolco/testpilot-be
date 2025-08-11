@@ -151,6 +151,29 @@ export class StripeService {
   ) {
     try {
       await this.creditsService.updatePaymentStatus(paymentIntent.id, status);
+      
+      // If payment is completed, add credits to the company
+      if (status === PaymentStatus.COMPLETED) {
+        let companyId = paymentIntent.metadata.companyId;
+        let credits = parseInt(paymentIntent.metadata.credits);
+        
+        // If metadata is missing, try to get payment details from database
+        if (!companyId || !credits || isNaN(credits)) {
+          const payment = await this.creditsService.getPaymentByStripeIntentId(paymentIntent.id);
+          if (payment) {
+            companyId = payment.company_id;
+            credits = payment.credits_purchased;
+            this.logger.log(`Retrieved payment details from database for ${paymentIntent.id}`);
+          }
+        }
+        
+        if (companyId && credits && !isNaN(credits)) {
+          await this.creditsService.addCreditsToCompany(companyId, credits);
+          this.logger.log(`Successfully added ${credits} credits to company ${companyId}`);
+        } else {
+          this.logger.error(`Missing or invalid payment details for payment ${paymentIntent.id}: companyId=${companyId}, credits=${credits}`);
+        }
+      }
     } catch (error) {
       this.logger.error(
         `Failed to update payment status for ${paymentIntent.id}:`,

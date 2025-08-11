@@ -78,4 +78,21 @@ export class CreditsController {
       editCreditsDto.description,
     );
   }
+
+  @Post('admin/process-pending/:companyId')
+  @UseGuards(AdminGuard)
+  async processPendingPayments(@Param('companyId') companyId: string) {
+    return await this.creditsService.processPendingPayments(companyId);
+  }
+
+  @Post('process-my-pending')
+  async processMyPendingPayments(@CurrentUser('id') userId: string) {
+    const companyId = await this.usersService.getUserCompanyId(userId);
+    
+    if (!companyId) {
+      throw new BadRequestException('Company not found');
+    }
+
+    return await this.creditsService.processPendingPayments(companyId);
+  }
 }
