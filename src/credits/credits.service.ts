@@ -362,6 +362,57 @@ export class CreditsService {
   }
 
   /**
+   * Updates payment status only if it matches the expected current status (idempotent)
+   * @param stripePaymentIntentId - The Stripe payment intent ID
+   * @param fromStatus - The expected current status
+   * @param toStatus - The new status to set
+   * @returns Promise<boolean> - True if status was updated, false if already changed
+   */
+  public async updatePaymentStatusIf(
+    stripePaymentIntentId: string,
+    fromStatus: PaymentStatus,
+    toStatus: PaymentStatus,
+  ): Promise<boolean> {
+    try {
+      // First check current status
+      const currentPayment = await this.supabaseService.findOne<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { stripe_payment_intent_id: stripePaymentIntentId },
+        'id, status'
+      );
+
+      if (!currentPayment) {
+        this.logger.warn(`Payment not found for Stripe intent ID: ${stripePaymentIntentId}`);
+        return false;
+      }
+
+      if (currentPayment.status !== fromStatus) {
+        this.logger.log(
+          `Payment ${stripePaymentIntentId} status is ${currentPayment.status}, expected ${fromStatus}, skipping update`
+        );
+        return false;
+      }
+
+      // Update status atomically
+      const result = await this.supabaseService.update<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { status: toStatus },
+        [{ key: 'stripe_payment_intent_id', value: stripePaymentIntentId }],
+      );
+
+      const success = result !== null;
+      if (success) {
+        this.logger.log(`Successfully updated payment ${stripePaymentIntentId} from ${fromStatus} to ${toStatus}`);
+      }
+
+      return success;
+    } catch (error) {
+      this.logger.error(`Error updating payment status for ${stripePaymentIntentId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Records credit usage for a specific test
    * @param companyId - The unique identifier of the company running the test
    * @param testId - The unique identifier of the test
@@ -424,7 +475,6 @@ export class CreditsService {
 
   /**
    * Processes existing pending payments and adds credits for completed ones
-   * This is useful for fixing existing pending payments that should have been completed
    * @param companyId - The unique identifier of the company
    * @returns Promise<{ processed: number; added: number }> - Number of payments processed and credits added
    */
@@ -442,26 +492,28 @@ export class CreditsService {
 
       for (const payment of pendingPayments) {
         try {
-          // Check if this payment should be completed (you might want to verify with Stripe here)
-          // For now, we'll assume pending payments older than a certain time should be completed
-          // This is a simplified approach - in production you'd want to verify with Stripe
-          
-          // Add credits for this payment
+          // Simple check: only process if still pending
+          const currentPayment = await this.supabaseService.findOne<CreditPayment>(
+            TableName.CREDIT_PAYMENTS,
+            { stripe_payment_intent_id: payment.stripe_payment_intent_id },
+            'status'
+          );
+
+          if (currentPayment?.status !== PaymentStatus.PENDING) {
+            continue; // Already processed, skip
+          }
+
+          // Add credits and update status
           await this.addCreditsToCompany(companyId, payment.credits_purchased);
-          
-          // Update payment status to completed
           await this.updatePaymentStatus(payment.stripe_payment_intent_id, PaymentStatus.COMPLETED);
-          
+
           processed++;
           totalCreditsAdded += payment.credits_purchased;
-          
-          this.logger.log(`Processed pending payment ${payment.id} for ${payment.credits_purchased} credits`);
         } catch (error) {
-          this.logger.error(`Failed to process pending payment ${payment.id}:`, error);
+          this.logger.error(`Failed to process payment ${payment.id}:`, error);
         }
       }
 
-      this.logger.log(`Processed ${processed} pending payments, added ${totalCreditsAdded} credits for company ${companyId}`);
       return { processed, added: totalCreditsAdded };
     } catch (error) {
       this.logger.error(`Error processing pending payments for company ${companyId}:`, error);
@@ -495,11 +547,34 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      const companyCredits = await this.supabaseService.findOne<
-        Pick<CompanyCredits, 'total'>
-      >(TableName.COMPANY_CREDITS, { company_id: companyId }, 'total');
+      // Calculate total from completed payments minus usage
+      const completedPayments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId, status: PaymentStatus.COMPLETED },
+        'credits_purchased'
+      );
 
-      return companyCredits?.total || 0;
+      const totalPurchased = completedPayments.reduce((sum, payment) => sum + payment.credits_purchased, 0);
+
+      // Get credit usage (if credit_usage table exists)
+      let totalUsed = 0;
+      try {
+        const creditUsage = await this.supabaseService.findMany<CreditUsage>(
+          TableName.CREDIT_USAGE,
+          { company_id: companyId },
+          'credits_used'
+        );
+        totalUsed = creditUsage.reduce((sum, usage) => sum + usage.credits_used, 0);
+      } catch (error) {
+        // Credit usage table might not exist, ignore
+        this.logger.log(`Credit usage table not found for company ${companyId}, assuming 0 usage`);
+      }
+
+      const calculatedTotal = totalPurchased - totalUsed;
+      
+      this.logger.log(`Company ${companyId}: ${totalPurchased} purchased - ${totalUsed} used = ${calculatedTotal} available`);
+      
+      return calculatedTotal;
     } catch (error) {
       this.logger.error('Error checking company credits:', error);
       throw new InternalServerErrorException('Failed to check company credits');
