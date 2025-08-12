@@ -37,27 +37,23 @@ export class CreditsService {
     limit = 20,
   ): Promise<CreditsData> {
     try {
-      const [total, result] = await Promise.all([
+      this.logger.log(`Getting credits data for company: ${companyId}, page: ${page}, limit: ${limit}`);
+      
+      const [total, transactions, totalCount] = await Promise.all([
         this.getCompanyAvailableCredits(companyId),
-        this.supabaseService.rpc<{
-          transactions: Transaction[];
-          count: number;
-        }>(Rpc.GET_COMPANY_TRANSACTION_HISTORY, {
-          p_company_id: companyId,
-          p_page: page,
-          p_limit: limit,
-        }),
+        this.getCompanyTransactions(companyId, page, limit),
+        this.getCompanyTransactionsCount(companyId),
       ]);
 
-      const transactions = result?.transactions ?? [];
-      const totalResults = result?.count ?? 0;
-      const totalPages = Math.ceil(totalResults / limit);
+      const totalPages = Math.ceil(totalCount / limit);
+
+      this.logger.log(`Found ${totalCount} total transactions, returning ${transactions.length} for page ${page}`);
 
       return {
         total: total || 0,
         transactions: {
           data: transactions,
-          total: totalResults,
+          total: totalCount,
           page,
           limit,
           totalPages,
@@ -66,6 +62,76 @@ export class CreditsService {
     } catch (error) {
       this.logger.error('Error fetching company credits data:', error);
       throw new InternalServerErrorException('Failed to fetch credits data');
+    }
+  }
+
+  /**
+   * Gets company transactions directly from credit_payments table
+   * @param companyId - The company ID
+   * @param page - Page number
+   * @param limit - Items per page
+   * @returns Promise<Transaction[]> - Array of transactions
+   */
+  private async getCompanyTransactions(
+    companyId: string,
+    page: number,
+    limit: number,
+  ): Promise<Transaction[]> {
+    try {
+      const offset = (page - 1) * limit;
+      
+      const payments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId },
+        'id, credits_purchased, amount_cents, status, stripe_payment_intent_id, created_at, updated_at'
+      );
+
+      // Sort by created_at descending (newest first)
+      const sortedPayments = payments.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      // Apply pagination
+      const paginatedPayments = sortedPayments.slice(offset, offset + limit);
+
+      // Map credit_payments to Transaction interface
+      const transactions: Transaction[] = paginatedPayments.map(payment => ({
+        id: payment.id,
+        type: 'payment' as const,
+        amount_cents: payment.amount_cents,
+        credits: payment.credits_purchased,
+        status: payment.status,
+        created_at: payment.created_at,
+        updated_at: payment.updated_at,
+      }));
+
+      this.logger.log(`Retrieved ${transactions.length} transactions for company ${companyId} (page ${page}, limit ${limit})`);
+      return transactions;
+    } catch (error) {
+      this.logger.error(`Error getting company transactions for ${companyId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Gets total count of company transactions
+   * @param companyId - The company ID
+   * @returns Promise<number> - Total transaction count
+   */
+  private async getCompanyTransactionsCount(companyId: string): Promise<number> {
+    try {
+      const payments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId },
+        'id'
+      );
+      
+      const count = payments.length;
+      this.logger.log(`Total transactions count for company ${companyId}: ${count}`);
+      return count;
+    } catch (error) {
+      this.logger.error(`Error getting transaction count for company ${companyId}:`, error);
+      return 0;
     }
   }
 
@@ -99,21 +165,13 @@ export class CreditsService {
         throw new NotFoundException('Company not found');
       }
 
-      const [total, result] = await Promise.all([
+      const [total, transactions, totalCount] = await Promise.all([
         this.getCompanyAvailableCredits(companyId),
-        this.supabaseService.rpc<{
-          transactions: Transaction[];
-          count: number;
-        }>(Rpc.GET_COMPANY_TRANSACTION_HISTORY, {
-          p_company_id: companyId,
-          p_page: page,
-          p_limit: limit,
-        }),
+        this.getCompanyTransactions(companyId, page, limit),
+        this.getCompanyTransactionsCount(companyId),
       ]);
 
-      const transactions = result?.transactions ?? [];
-      const totalResults = result?.count ?? 0;
-      const totalPages = Math.ceil(totalResults / limit);
+      const totalPages = Math.ceil(totalCount / limit);
 
       return {
         total: total || 0,
@@ -121,7 +179,7 @@ export class CreditsService {
         company_name: company.name,
         transactions: {
           data: transactions,
-          total: totalResults,
+          total: totalCount,
           page,
           limit,
           totalPages,
@@ -304,6 +362,57 @@ export class CreditsService {
   }
 
   /**
+   * Updates payment status only if it matches the expected current status (idempotent)
+   * @param stripePaymentIntentId - The Stripe payment intent ID
+   * @param fromStatus - The expected current status
+   * @param toStatus - The new status to set
+   * @returns Promise<boolean> - True if status was updated, false if already changed
+   */
+  public async updatePaymentStatusIf(
+    stripePaymentIntentId: string,
+    fromStatus: PaymentStatus,
+    toStatus: PaymentStatus,
+  ): Promise<boolean> {
+    try {
+      // First check current status
+      const currentPayment = await this.supabaseService.findOne<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { stripe_payment_intent_id: stripePaymentIntentId },
+        'id, status'
+      );
+
+      if (!currentPayment) {
+        this.logger.warn(`Payment not found for Stripe intent ID: ${stripePaymentIntentId}`);
+        return false;
+      }
+
+      if (currentPayment.status !== fromStatus) {
+        this.logger.log(
+          `Payment ${stripePaymentIntentId} status is ${currentPayment.status}, expected ${fromStatus}, skipping update`
+        );
+        return false;
+      }
+
+      // Update status atomically
+      const result = await this.supabaseService.update<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { status: toStatus },
+        [{ key: 'stripe_payment_intent_id', value: stripePaymentIntentId }],
+      );
+
+      const success = result !== null;
+      if (success) {
+        this.logger.log(`Successfully updated payment ${stripePaymentIntentId} from ${fromStatus} to ${toStatus}`);
+      }
+
+      return success;
+    } catch (error) {
+      this.logger.error(`Error updating payment status for ${stripePaymentIntentId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Records credit usage for a specific test
    * @param companyId - The unique identifier of the company running the test
    * @param testId - The unique identifier of the test
@@ -334,6 +443,103 @@ export class CreditsService {
   }
 
   /**
+   * Adds credits to a company when a payment is completed successfully
+   * @param companyId - The unique identifier of the company
+   * @param creditsToAdd - The number of credits to add
+   * @returns Promise<number> - The new total credit balance
+   * @throws Error - When database operations fail
+   */
+  public async addCreditsToCompany(
+    companyId: string,
+    creditsToAdd: number,
+  ): Promise<number> {
+    try {
+      // Get current credits
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      const newTotal = currentCredits + creditsToAdd;
+
+      // Update company credits
+      await this.supabaseService.update<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { total: newTotal },
+        [{ key: 'company_id', value: companyId }],
+      );
+
+      this.logger.log(`Added ${creditsToAdd} credits to company ${companyId}. New balance: ${newTotal}`);
+      return newTotal;
+    } catch (error) {
+      this.logger.error(`Error adding credits to company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Processes existing pending payments and adds credits for completed ones
+   * @param companyId - The unique identifier of the company
+   * @returns Promise<{ processed: number; added: number }> - Number of payments processed and credits added
+   */
+  public async processPendingPayments(companyId: string): Promise<{ processed: number; added: number }> {
+    try {
+      // Get all pending payments for the company
+      const pendingPayments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId, status: PaymentStatus.PENDING },
+        'id, credits_purchased, stripe_payment_intent_id'
+      );
+
+      let processed = 0;
+      let totalCreditsAdded = 0;
+
+      for (const payment of pendingPayments) {
+        try {
+          // Simple check: only process if still pending
+          const currentPayment = await this.supabaseService.findOne<CreditPayment>(
+            TableName.CREDIT_PAYMENTS,
+            { stripe_payment_intent_id: payment.stripe_payment_intent_id },
+            'status'
+          );
+
+          if (currentPayment?.status !== PaymentStatus.PENDING) {
+            continue; // Already processed, skip
+          }
+
+          // Add credits and update status
+          await this.addCreditsToCompany(companyId, payment.credits_purchased);
+          await this.updatePaymentStatus(payment.stripe_payment_intent_id, PaymentStatus.COMPLETED);
+
+          processed++;
+          totalCreditsAdded += payment.credits_purchased;
+        } catch (error) {
+          this.logger.error(`Failed to process payment ${payment.id}:`, error);
+        }
+      }
+
+      return { processed, added: totalCreditsAdded };
+    } catch (error) {
+      this.logger.error(`Error processing pending payments for company ${companyId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Gets payment details by Stripe payment intent ID
+   * @param stripePaymentIntentId - The Stripe payment intent ID
+   * @returns Promise<CreditPayment | null> - The payment details or null if not found
+   */
+  public async getPaymentByStripeIntentId(stripePaymentIntentId: string): Promise<CreditPayment | null> {
+    try {
+      const payment = await this.supabaseService.findOne<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { stripe_payment_intent_id: stripePaymentIntentId }
+      );
+      return payment;
+    } catch (error) {
+      this.logger.error(`Error getting payment by Stripe intent ID ${stripePaymentIntentId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Retrieves the current available credits balance for a company
    * @param companyId - The unique identifier of the company
    * @returns Promise<number> - The total available credits for the company
@@ -341,11 +547,34 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      const companyCredits = await this.supabaseService.findOne<
-        Pick<CompanyCredits, 'total'>
-      >(TableName.COMPANY_CREDITS, { company_id: companyId }, 'total');
+      // Calculate total from completed payments minus usage
+      const completedPayments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId, status: PaymentStatus.COMPLETED },
+        'credits_purchased'
+      );
 
-      return companyCredits?.total || 0;
+      const totalPurchased = completedPayments.reduce((sum, payment) => sum + payment.credits_purchased, 0);
+
+      // Get credit usage (if credit_usage table exists)
+      let totalUsed = 0;
+      try {
+        const creditUsage = await this.supabaseService.findMany<CreditUsage>(
+          TableName.CREDIT_USAGE,
+          { company_id: companyId },
+          'credits_used'
+        );
+        totalUsed = creditUsage.reduce((sum, usage) => sum + usage.credits_used, 0);
+      } catch (error) {
+        // Credit usage table might not exist, ignore
+        this.logger.log(`Credit usage table not found for company ${companyId}, assuming 0 usage`);
+      }
+
+      const calculatedTotal = totalPurchased - totalUsed;
+      
+      this.logger.log(`Company ${companyId}: ${totalPurchased} purchased - ${totalUsed} used = ${calculatedTotal} available`);
+      
+      return calculatedTotal;
     } catch (error) {
       this.logger.error('Error checking company credits:', error);
       throw new InternalServerErrorException('Failed to check company credits');
