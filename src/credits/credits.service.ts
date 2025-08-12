@@ -37,27 +37,23 @@ export class CreditsService {
     limit = 20,
   ): Promise<CreditsData> {
     try {
-      const [total, result] = await Promise.all([
+      this.logger.log(`Getting credits data for company: ${companyId}, page: ${page}, limit: ${limit}`);
+      
+      const [total, transactions, totalCount] = await Promise.all([
         this.getCompanyAvailableCredits(companyId),
-        this.supabaseService.rpc<{
-          transactions: Transaction[];
-          count: number;
-        }>(Rpc.GET_COMPANY_TRANSACTION_HISTORY, {
-          p_company_id: companyId,
-          p_page: page,
-          p_limit: limit,
-        }),
+        this.getCompanyTransactions(companyId, page, limit),
+        this.getCompanyTransactionsCount(companyId),
       ]);
 
-      const transactions = result?.transactions ?? [];
-      const totalResults = result?.count ?? 0;
-      const totalPages = Math.ceil(totalResults / limit);
+      const totalPages = Math.ceil(totalCount / limit);
+
+      this.logger.log(`Found ${totalCount} total transactions, returning ${transactions.length} for page ${page}`);
 
       return {
         total: total || 0,
         transactions: {
           data: transactions,
-          total: totalResults,
+          total: totalCount,
           page,
           limit,
           totalPages,
@@ -66,6 +62,76 @@ export class CreditsService {
     } catch (error) {
       this.logger.error('Error fetching company credits data:', error);
       throw new InternalServerErrorException('Failed to fetch credits data');
+    }
+  }
+
+  /**
+   * Gets company transactions directly from credit_payments table
+   * @param companyId - The company ID
+   * @param page - Page number
+   * @param limit - Items per page
+   * @returns Promise<Transaction[]> - Array of transactions
+   */
+  private async getCompanyTransactions(
+    companyId: string,
+    page: number,
+    limit: number,
+  ): Promise<Transaction[]> {
+    try {
+      const offset = (page - 1) * limit;
+      
+      const payments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId },
+        'id, credits_purchased, amount_cents, status, stripe_payment_intent_id, created_at, updated_at'
+      );
+
+      // Sort by created_at descending (newest first)
+      const sortedPayments = payments.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      // Apply pagination
+      const paginatedPayments = sortedPayments.slice(offset, offset + limit);
+
+      // Map credit_payments to Transaction interface
+      const transactions: Transaction[] = paginatedPayments.map(payment => ({
+        id: payment.id,
+        type: 'payment' as const,
+        amount_cents: payment.amount_cents,
+        credits: payment.credits_purchased,
+        status: payment.status,
+        created_at: payment.created_at,
+        updated_at: payment.updated_at,
+      }));
+
+      this.logger.log(`Retrieved ${transactions.length} transactions for company ${companyId} (page ${page}, limit ${limit})`);
+      return transactions;
+    } catch (error) {
+      this.logger.error(`Error getting company transactions for ${companyId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Gets total count of company transactions
+   * @param companyId - The company ID
+   * @returns Promise<number> - Total transaction count
+   */
+  private async getCompanyTransactionsCount(companyId: string): Promise<number> {
+    try {
+      const payments = await this.supabaseService.findMany<CreditPayment>(
+        TableName.CREDIT_PAYMENTS,
+        { company_id: companyId },
+        'id'
+      );
+      
+      const count = payments.length;
+      this.logger.log(`Total transactions count for company ${companyId}: ${count}`);
+      return count;
+    } catch (error) {
+      this.logger.error(`Error getting transaction count for company ${companyId}:`, error);
+      return 0;
     }
   }
 
@@ -99,21 +165,13 @@ export class CreditsService {
         throw new NotFoundException('Company not found');
       }
 
-      const [total, result] = await Promise.all([
+      const [total, transactions, totalCount] = await Promise.all([
         this.getCompanyAvailableCredits(companyId),
-        this.supabaseService.rpc<{
-          transactions: Transaction[];
-          count: number;
-        }>(Rpc.GET_COMPANY_TRANSACTION_HISTORY, {
-          p_company_id: companyId,
-          p_page: page,
-          p_limit: limit,
-        }),
+        this.getCompanyTransactions(companyId, page, limit),
+        this.getCompanyTransactionsCount(companyId),
       ]);
 
-      const transactions = result?.transactions ?? [];
-      const totalResults = result?.count ?? 0;
-      const totalPages = Math.ceil(totalResults / limit);
+      const totalPages = Math.ceil(totalCount / limit);
 
       return {
         total: total || 0,
@@ -121,7 +179,7 @@ export class CreditsService {
         company_name: company.name,
         transactions: {
           data: transactions,
-          total: totalResults,
+          total: totalCount,
           page,
           limit,
           totalPages,
