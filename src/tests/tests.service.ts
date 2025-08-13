@@ -414,4 +414,82 @@ export class TestsService {
       ? { ...variation.product, prolificStatus: variation.prolific_status }
       : null;
   }
+
+  /**
+   * Update study cost information in the test_variations table
+   */
+  public async updateStudyCost(
+    testId: string, 
+    prolificStudyId: string, 
+    cost: number,
+    participantCount: number,
+    rewardAmount: number
+  ): Promise<void> {
+    try {
+      // Find the test variation by test_id and variation_type
+      // We need to find the specific variation that will be linked to this study
+      const testVariations = await this.supabaseService.getByCondition<TestVariation[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: '*',
+        condition: 'test_id',
+        value: testId,
+        single: false,
+      });
+
+      if (!testVariations || testVariations.length === 0) {
+        this.logger.warn(`No test variations found for test ${testId}, cannot update cost`);
+        return;
+      }
+
+      // For now, update the first variation found
+      // In the future, you might want to pass variation_type to be more specific
+      const testVariation = testVariations[0];
+
+      // Update the cost information and set the prolific_test_id
+      await this.supabaseService.update<TestVariation>(
+        TableName.TEST_VARIATIONS,
+        {
+          calculated_cost: cost,
+          last_cost_calculation: new Date().toISOString(),
+          participant_count: participantCount,
+          reward_amount: rewardAmount,
+          prolific_test_id: prolificStudyId
+        },
+        [
+          { key: 'id', value: testVariation.id }
+        ]
+      );
+      
+      this.logger.log(`Updated study cost for ${prolificStudyId}: ${cost} cents`);
+    } catch (error) {
+      this.logger.error(`Failed to update study cost for ${prolificStudyId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get total study costs for balance checking
+   */
+  public async getTotalStudyCosts(studyIds: string[]): Promise<number> {
+    try {
+      // Fast database query to sum all costs
+      const result = await this.supabaseService.getByCondition<{ calculated_cost: number }[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'calculated_cost',
+        condition: 'prolific_test_id',
+        value: studyIds,
+        single: false,
+      });
+      
+      if (!result || result.length === 0) {
+        return 0;
+      }
+      
+      const totalCost = result.reduce((sum, variation) => sum + (variation.calculated_cost || 0), 0);
+      return totalCost;
+    } catch (error) {
+      this.logger.error('Failed to get total study costs:', error);
+      throw error;
+    }
+  }
 }

@@ -43,6 +43,11 @@ export interface TestVariation {
   updated_at: string;
   prolific_status: string;
   prolific_test_id: string;
+  // New cost tracking fields
+  calculated_cost?: number;
+  last_cost_calculation?: string;
+  participant_count?: number;
+  reward_amount?: number;
 }
 
 export interface Product {
