@@ -419,24 +419,44 @@ export class TestsService {
    * Update study cost information in the test_variations table
    */
   public async updateStudyCost(
-    testInternalName: string, 
+    testId: string, 
     prolificStudyId: string, 
     cost: number,
     participantCount: number,
     rewardAmount: number
   ): Promise<void> {
     try {
-      // Find the test variation by prolific study ID and update cost information
+      // Find the test variation by test_id and variation_type
+      // We need to find the specific variation that will be linked to this study
+      const testVariations = await this.supabaseService.getByCondition<TestVariation[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: '*',
+        condition: 'test_id',
+        value: testId,
+        single: false,
+      });
+
+      if (!testVariations || testVariations.length === 0) {
+        this.logger.warn(`No test variations found for test ${testId}, cannot update cost`);
+        return;
+      }
+
+      // For now, update the first variation found
+      // In the future, you might want to pass variation_type to be more specific
+      const testVariation = testVariations[0];
+
+      // Update the cost information and set the prolific_test_id
       await this.supabaseService.update<TestVariation>(
         TableName.TEST_VARIATIONS,
         {
           calculated_cost: cost,
           last_cost_calculation: new Date().toISOString(),
           participant_count: participantCount,
-          reward_amount: rewardAmount
+          reward_amount: rewardAmount,
+          prolific_test_id: prolificStudyId
         },
         [
-          { key: 'prolific_test_id', value: prolificStudyId }
+          { key: 'id', value: testVariation.id }
         ]
       );
       

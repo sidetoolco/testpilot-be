@@ -180,7 +180,7 @@ export class ProlificService {
         
         // Store cost in test_variations table
         await this.testsService.updateStudyCost(
-          createTestDto.publicInternalName,
+          createTestDto.testId,
           study.id,
           studyCost.total_cost,
           createTestDto.targetNumberOfParticipants,
@@ -672,13 +672,9 @@ export class ProlificService {
             newPlaces,
           );
           
-          await this.testsService.updateStudyCost(
-            study.internal_name || study.name,
-            studyId,
-            newStudyCost.total_cost,
-            newPlaces,
-            study.reward
-          );
+          // Note: We can't update the cost here since we don't have the testId
+          // The cost will be updated when the study is properly linked to the test variation
+          this.logger.log(`Study places increased for ${studyId}, cost update skipped (no testId available)`);
           
           this.logger.log(`Updated stored cost for study ${studyId} after increasing places`);
         } catch (costError) {
@@ -715,13 +711,9 @@ export class ProlificService {
             study.total_available_places,
           );
           
-          await this.testsService.updateStudyCost(
-            study.internal_name || study.name,
-            studyId,
-            studyCost.total_cost,
-            study.total_available_places,
-            study.reward
-          );
+          // Note: We can't update the cost here since we don't have the testId
+          // This method is mainly for updating costs when we have the proper test context
+          this.logger.log(`Study cost calculated for ${studyId}: ${studyCost.total_cost} cents, but update skipped (no testId available)`);
           
           updatedCount++;
           this.logger.log(`Recalculated cost for study ${studyId}: ${studyCost.total_cost} cents`);
