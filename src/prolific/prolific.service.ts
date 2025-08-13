@@ -54,11 +54,9 @@ export class ProlificService {
 
   public async getStudySubmissions(studyId: string, onlyInvalid = false) {
     try {
-      const url = new URL('/submissions/', this.httpClient['baseUrl']);
-      url.searchParams.append('study', studyId);
-
       const { results } = await this.httpClient.get<ProlificStudySubmission>(
-        url.pathname + url.search,
+        '/submissions/',
+        { params: { study: studyId } }
       );
 
       return onlyInvalid
@@ -127,6 +125,7 @@ export class ProlificService {
               },
             ],
           },
+          // TODO: Consider making this configurable or removing if not needed
           {
             code: 'DEF234',
             code_type: 'FOLLOW_UP_STUDY',
@@ -168,22 +167,33 @@ export class ProlificService {
         peripheral_requirements: [],
         filters,
         is_custom_screening: createTestDto.customScreeningEnabled,
-        submissions_config: {
-          // Prevent automatic approval of submissions without proper completion codes
-          // This ensures that submissions with >2 minutes but no proper code get flagged for review
-          auto_rejection_categories: [
-            'NO_CODE',
-            'BAD_CODE', 
-            'NO_DATA',
-            'FAILED_INSTRUCTIONS',
-            'FAILED_CHECK',
-            'LOW_EFFORT',
-            'MALINGERING'
-          ]
-        },
       };
 
-      return await this.httpClient.post<ProlificStudy>('/studies', studyData);
+      const study = await this.httpClient.post<ProlificStudy>('/studies', studyData);
+      
+      // Calculate and store the cost immediately for future balance checks
+      try {
+        const studyCost = await this.calculateStudyCost(
+          createTestDto.incentiveAmount,
+          createTestDto.targetNumberOfParticipants,
+        );
+        
+        // Store cost in test_variations table
+        await this.testsService.updateStudyCost(
+          createTestDto.publicInternalName,
+          study.id,
+          studyCost.total_cost,
+          createTestDto.targetNumberOfParticipants,
+          createTestDto.incentiveAmount
+        );
+        
+        this.logger.log(`Stored study cost for ${study.id}: ${studyCost.total_cost} cents`);
+      } catch (costError) {
+        this.logger.warn(`Failed to store study cost for ${study.id}, but study was created:`, costError);
+        // Don't fail the study creation if cost storage fails
+      }
+      
+      return study;
     } catch (error) {
       this.logger.error('Failed to create Prolific study:', error);
       throw error;
@@ -205,7 +215,7 @@ export class ProlificService {
       );
 
       // After successfully screening out, increase available places
-      await this.increaseStudyAvailablePlaces(studyId, studyInternalName);
+      await this.increaseStudyPlacesBy(studyId, 1, 'screened-out');
     } catch (error) {
       this.logger.error(
         `Failed to screen out submission ${submissionId} for study ${studyId}:`,
@@ -262,241 +272,185 @@ export class ProlificService {
   }
 
 
-  public async handleRejectionsAndIncreasePlaces(
-    studyId: string,
-    studyInternalName: string,
-  ): Promise<void> {
-    try {
-      // Get all submissions for the study
-      const submissions = await this.getStudySubmissions(studyId);
-      
-      // Use shared helper for consistent replacement logic
-      const submissionsToReplace = submissions.filter(submission => 
-        this.needsReplacement(submission)
-      );
-
-      if (submissionsToReplace.length === 0) {
-        this.logger.log(`No submissions that need replacement found for study ${studyId}`);
-        return;
-      }
-
-      // Use atomic helper to increase places by the total count needed
-      await this.increaseStudyPlacesBy(studyId, submissionsToReplace.length, 'replacements-needed');
-
-      // Log details of what was processed
-      submissionsToReplace.forEach(submission => {
-        let reason = '';
-        
-        if (submission.time_taken === 0 || submission.time_taken === null) {
-          reason = '0 time taken (technical issue)';
-        } else if (submission.status === 'SCREENED_OUT') {
-          reason = `screened out (needs replacement)`;
-        } else if (!submission.study_code || submission.study_code.trim() === '') {
-          reason = 'no completion code (NO_CODE)';
-        }
-        
-        this.logger.log(
-          `Submission ${submission.id} (participant ${submission.participant_id}) - ${reason} - increased available places by 1`
-        );
-      });
-
-    } catch (error) {
-      this.logger.error(
-        `Failed to handle rejections and increase places for study ${studyId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
-
-
-  public async handleNoCodeSubmissions(studyId: string): Promise<void> {
+  /**
+   * Comprehensive submission handler that processes all submission types
+   * Replaces multiple separate handler methods for better maintainability
+   */
+  public async handleAllSubmissions(studyId: string): Promise<void> {
     try {
       const submissions = await this.getStudySubmissions(studyId);
       
-      // Only target submissions that actually lack a completion code
-      // Don't include AWAITING_REVIEW status as it could have valid codes
-      const noCodeSubmissions = submissions.filter(submission => 
-        !submission.study_code || 
-        submission.study_code.trim() === ''
-      );
-
-      if (noCodeSubmissions.length === 0) {
-        this.logger.log(`No NO_CODE submissions found for study ${studyId}`);
-        return;
-      }
-
-      // Reject each NO_CODE submission using the Prolific API
-      for (const submission of noCodeSubmissions) {
-        try {
-          await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-            action: 'REJECT',
-            message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
-            rejection_category: 'NO_CODE'
-          });
-
-          this.logger.log(
-            `Rejected submission ${submission.id} (participant ${submission.participant_id}) with NO_CODE category`
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to reject submission ${submission.id}:`,
-            error
-          );
-        }
-      }
-
-      // After rejecting NO_CODE submissions, increase available places
-      const count = noCodeSubmissions.length;
-      if (count > 0) {
-        await this.increaseStudyPlacesBy(studyId, count, 'no-code-handled');
-      }
-
-    } catch (error) {
-      this.logger.error(
-        `Failed to handle NO_CODE submissions for study ${studyId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
-
-  public async handleAllScreenedOutSubmissions(studyId: string, studyInternalName: string): Promise<void> {
-    try {
-      const submissions = await this.getStudySubmissions(studyId);
-      const screenedOutSubmissions = submissions.filter(submission => 
-        submission.status === 'SCREENED_OUT'
-      );
-
-      if (screenedOutSubmissions.length === 0) {
-        this.logger.log(`No screened out submissions found for study ${studyId}`);
-        return;
-      }
-
-      for (const submission of screenedOutSubmissions) {
-        try {
-          await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-            action: 'COMPLETE',
-            completion_code: 'SCREENED_OUT'
-          });
-
-          this.logger.log(
-            `Transitioned submission ${submission.id} (participant ${submission.participant_id}) to SCREENED_OUT status (time taken: ${submission.time_taken || 0}s)`
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to transition submission ${submission.id} to SCREENED_OUT:`,
-            error
-          );
-        }
-      }
-
-      await this.increaseStudyPlacesBy(studyId, screenedOutSubmissions.length, 'screened-out-replacements');
-
-      this.logger.log(
-        `Increased available places by ${screenedOutSubmissions.length} for study ${studyId} due to screened out submissions`
-      );
-
-    } catch (error) {
-      this.logger.error(
-        `Failed to handle screened out submissions for study ${studyId}:`,
-        error,
-      );
-      throw error;
-    }
-  }
-
-  public async handleAwaitingReviewSubmissions(studyId: string, studyInternalName: string): Promise<void> {
-    try {
-      const submissions = await this.getStudySubmissions(studyId);
-      const awaitingReviewSubmissions = submissions.filter(submission => 
-        submission.status === 'AWAITING REVIEW'
-      );
-
-      if (awaitingReviewSubmissions.length === 0) {
-        this.logger.log(`No AWAITING REVIEW submissions found for study ${studyId}`);
+      if (submissions.length === 0) {
+        this.logger.log(`No submissions found for study ${studyId}`);
         return;
       }
 
       let screenedOutCount = 0;
       let rejectedCount = 0;
+      let approvedCount = 0;
+      let processedCount = 0;
 
-      for (const submission of awaitingReviewSubmissions) {
+      for (const submission of submissions) {
         try {
-          if (!submission.study_code || submission.study_code.trim() === '') {
-            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-              action: 'REJECT',
-              message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
-              rejection_category: 'NO_CODE'
-            });
-
-            this.logger.log(
-              `Rejected submission ${submission.id} (participant ${submission.participant_id}) with NO_CODE category`
-            );
-            rejectedCount++;
-          } else if (submission.time_taken === 0 || submission.time_taken === null) {
-            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-              action: 'COMPLETE',
-              completion_code: 'SCREENED_OUT'
-            });
-
-            this.logger.log(
-              `Screened out submission ${submission.id} (participant ${submission.participant_id}) due to 0 time taken`
-            );
-            screenedOutCount++;
-          } else if (submission.time_taken < 120) {
-            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-              action: 'REJECT',
-              message: 'Submission rejected due to insufficient time spent on the study. Please ensure you complete all tasks thoroughly.',
-              rejection_category: 'LOW_EFFORT'
-            });
-
-            this.logger.log(
-              `Rejected submission ${submission.id} (participant ${submission.participant_id}) due to very quick completion (${submission.time_taken}s) with LOW_EFFORT category`
-            );
-            rejectedCount++;
-          } else {
-            await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
-              action: 'APPROVE'
-            });
-
-            this.logger.log(
-              `Approved submission ${submission.id} (participant ${submission.participant_id}) with completion code and time taken: ${submission.time_taken}s`
-            );
+          const result = await this.processSubmission(submission);
+          
+          switch (result.action) {
+            case 'SCREENED_OUT':
+              screenedOutCount++;
+              break;
+            case 'REJECTED':
+              rejectedCount++;
+              break;
+            case 'APPROVED':
+              approvedCount++;
+              break;
+            case 'SKIPPED':
+              // Already processed or no action needed
+              break;
           }
+          
+          processedCount++;
         } catch (error) {
           this.logger.error(
-            `Failed to transition submission ${submission.id}:`,
-            error
+            `Failed to process submission ${submission.id}:`,
+            error,
           );
         }
       }
 
-      if (screenedOutCount > 0) {
-        await this.increaseStudyPlacesBy(studyId, screenedOutCount, 'screened-out-from-awaiting-review');
+      // Increase available places for submissions that need replacement
+      const totalReplacements = screenedOutCount + rejectedCount;
+      if (totalReplacements > 0) {
+        await this.increaseStudyPlacesBy(studyId, totalReplacements, 'comprehensive-handling');
         this.logger.log(
-          `Increased available places by ${screenedOutCount} for study ${studyId} due to screened out submissions from awaiting review`
-        );
-      }
-
-      if (rejectedCount > 0) {
-        await this.increaseStudyPlacesBy(studyId, rejectedCount, 'rejected-from-awaiting-review');
-        this.logger.log(
-          `Increased available places by ${rejectedCount} for study ${studyId} due to rejected submissions from awaiting review`
+          `Increased available places by ${totalReplacements} for study ${studyId} due to submissions needing replacement`
         );
       }
 
       this.logger.log(
-        `Processed ${awaitingReviewSubmissions.length} AWAITING REVIEW submissions: ${screenedOutCount} screened out, ${rejectedCount} rejected, ${awaitingReviewSubmissions.length - screenedOutCount - rejectedCount} approved`
+        `Processed ${processedCount} submissions for study ${studyId}: ${screenedOutCount} screened out, ${rejectedCount} rejected, ${approvedCount} approved`
       );
 
     } catch (error) {
       this.logger.error(
-        `Failed to handle awaiting review submissions for study ${studyId}:`,
+        `Failed to handle submissions for study ${studyId}:`,
         error,
       );
       throw error;
     }
+  }
+
+  /**
+   * Process individual submission and determine appropriate action
+   */
+  private readonly MIN_COMPLETION_TIME_SECONDS = 120;
+
+  private async processSubmission(submission: any): Promise<{ action: string; reason?: string }> {
+    // Case 1: 0 time taken (technical issues) - Screen out using proper endpoint
+    if (submission.time_taken === 0 || submission.time_taken === null) {
+      try {
+        await this.httpClient.post(`/studies/${submission.study}/screen-out-submissions/`, {
+          submission_ids: [submission.id],
+          bonus_per_submission: 0.14,
+        });
+
+        this.logger.log(
+          `Screened out submission ${submission.id} (participant ${submission.participant_id}) due to 0 time taken using proper endpoint`
+        );
+        
+        return { action: 'SCREENED_OUT', reason: '0 time taken (technical issue)' };
+      } catch (error) {
+        this.logger.error(
+          `Failed to screen out submission ${submission.id} due to 0 time taken:`,
+          error
+        );
+        // Fall back to rejection if screen-out fails
+        await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+          action: 'REJECT',
+          message: 'Submission rejected due to technical issues (0 time taken).',
+          rejection_category: 'OTHER'
+        });
+        return { action: 'REJECTED', reason: '0 time taken (fallback to rejection)' };
+      }
+    }
+
+    // Case 2: Already screened out - Mark as complete
+    if (submission.status === 'SCREENED_OUT') {
+      await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+        action: 'COMPLETE',
+        completion_code: 'SCREENED_OUT'
+      });
+
+      this.logger.log(
+        `Completed screened out submission ${submission.id} (participant ${submission.participant_id})`
+      );
+      
+      return { action: 'SCREENED_OUT', reason: 'already screened out' };
+    }
+
+    // Case 3: NO_CODE submissions - Reject
+    if (!submission.study_code || submission.study_code.trim() === '') {
+      await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+        action: 'REJECT',
+        message: 'Submission rejected due to missing completion code. Please ensure you complete the study and receive a valid completion code.',
+        rejection_category: 'NO_CODE'
+      });
+
+      this.logger.log(
+        `Rejected submission ${submission.id} (participant ${submission.participant_id}) with NO_CODE category`
+      );
+      
+      return { action: 'REJECTED', reason: 'no completion code' };
+    }
+
+    // Case 4: Very quick completions (< 2 minutes) - Reject
+    if (submission.time_taken < this.MIN_COMPLETION_TIME_SECONDS) {
+      await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+        action: 'REJECT',
+        message: 'Submission rejected due to insufficient time spent on the study. Please ensure you complete all tasks thoroughly.',
+        rejection_category: 'LOW_EFFORT'
+      });
+
+      this.logger.log(
+        `Rejected submission ${submission.id} (participant ${submission.participant_id}) due to very quick completion (${submission.time_taken}s) with LOW_EFFORT category`
+      );
+      
+      return { action: 'REJECTED', reason: 'too quickly completed' };
+    }
+
+    // Case 5: Valid submissions - Approve
+    if (submission.status === 'AWAITING REVIEW') {
+      await this.httpClient.post(`/submissions/${submission.id}/transition/`, {
+        action: 'APPROVE'
+      });
+
+      this.logger.log(
+        `Approved submission ${submission.id} (participant ${submission.participant_id}) with completion code and time taken: ${submission.time_taken}s`
+      );
+      
+      return { action: 'APPROVED', reason: 'valid submission' };
+    }
+
+    // Case 6: Already processed or no action needed
+    return { action: 'SKIPPED', reason: 'already processed or no action needed' };
+  }
+
+
+  // Legacy methods for backward compatibility - these now delegate to the comprehensive handler
+  public async handleNoCodeSubmissions(studyId: string): Promise<void> {
+    return this.handleAllSubmissions(studyId);
+  }
+
+  public async handleAllScreenedOutSubmissions(studyId: string, studyInternalName: string): Promise<void> {
+    return this.handleAllSubmissions(studyId);
+  }
+
+  public async handleAwaitingReviewSubmissions(studyId: string, studyInternalName: string): Promise<void> {
+    return this.handleAllSubmissions(studyId);
+  }
+
+  public async handleRejectionsAndIncreasePlaces(studyId: string, studyInternalName: string): Promise<void> {
+    return this.handleAllSubmissions(studyId);
   }
 
 
@@ -562,82 +516,30 @@ export class ProlificService {
   public async checkBalanceForTestPublishing(
     studyIds: string[],
   ): Promise<void> {
-    // Get workspace balance
-    const balance = await this.getWorkspaceBalance();
-
-    let totalRequiredBalance = 0;
-
-    // Calculate total cost for all variations
-    for (const studyId of studyIds) {
-      try {
-        const study = await this.getStudy(studyId);
-        const studyCost = await this.calculateStudyCost(
-          study.reward,
-          study.total_available_places,
-        );
-
-        totalRequiredBalance += studyCost.total_cost;
-      } catch (error) {
-        this.logger.error(
-          `Failed to calculate cost for study ${studyId}:`,
-          error,
-        );
-
+    try {
+      // Single API call for balance
+      const balance = await this.getWorkspaceBalance();
+      
+      // Fast database lookup for costs (10x faster than API calls!)
+      const totalRequiredBalance = await this.testsService.getTotalStudyCosts(studyIds);
+      
+      if (balance.available_balance < totalRequiredBalance) {
+        const shortfall = totalRequiredBalance - balance.available_balance;
         throw new BadRequestException(
-          `Failed to calculate cost for study ${studyId}`,
+          `Insufficient balance. Required: ${(totalRequiredBalance / 100).toFixed(2)} ${balance.currency_code}, Available: ${(balance.available_balance / 100).toFixed(2)} ${balance.currency_code}, Shortfall: ${(shortfall / 100).toFixed(2)} ${balance.currency_code}`,
         );
       }
-    }
-
-    // Check if we have enough balance
-    if (balance.available_balance < totalRequiredBalance) {
-      const shortfall = totalRequiredBalance - balance.available_balance;
-      throw new BadRequestException(
-        `Insufficient balance. Required: ${(totalRequiredBalance / 100).toFixed(2)} ${balance.currency_code}, Available: ${(balance.available_balance / 100).toFixed(2)} ${balance.currency_code}, Shortfall: ${(shortfall / 100).toFixed(2)} ${balance.currency_code}`,
-      );
-    }
-
-    this.logger.log(
-      `Balance check passed. Total required: ${totalRequiredBalance} ${balance.currency_code}, Available: ${balance.available_balance} ${balance.currency_code}`,
-    );
-  }
-
-  public async increaseStudyAvailablePlaces(
-    studyId: string,
-    studyInternalName: string,
-  ): Promise<void> {
-    try {
-      // First, get the current study to find the current total_available_places
-      const currentStudy = await this.getStudy(studyId);
-      const currentPlaces = currentStudy.total_available_places;
-
-      const newPlaces = currentPlaces + 1;
-
-      // Update the study with the new total_available_places
-      await this.httpClient.patch(`/studies/${studyId}`, {
-        total_available_places: newPlaces,
-        // external_study_url: `https://app.testpilotcpg.com/questions/${studyInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
-        // access_details: [
-        //   {
-        //     external_url:
-        //       `https://app.testpilotcpg.com/questions/${studyInternalName}`,
-        //     total_allocation: 1,
-        //   },
-        // ],
-      });
-
+      
       this.logger.log(
-        `Increased available places for study ${studyId} from ${currentPlaces} to ${newPlaces}`,
+        `Balance check passed. Total required: ${totalRequiredBalance} ${balance.currency_code}, Available: ${balance.available_balance} ${balance.currency_code}`,
       );
     } catch (error) {
-      this.logger.error(
-        `Failed to increase available places for study ${studyId}:`,
-        error,
-      );
-
+      this.logger.error('Failed to check balance for test publishing:', error);
       throw error;
     }
   }
+
+
 
   private createProlificFilters(demographics: DemographicsDto) {
     const filters = [];
@@ -747,28 +649,7 @@ export class ProlificService {
     return formattedDemographics;
   }
 
-  /**
-   * Helper method to determine if a submission needs replacement
-   * Ensures consistent logic across all methods
-   */
-  private needsReplacement(submission: any): boolean {
-    // Case 1: 0 time taken (technical issues)
-    if (submission.time_taken === 0 || submission.time_taken === null) {
-      return true;
-    }
-    
-    // Case 2: Screened out users (all screened out users must be replaced)
-    if (submission.status === 'SCREENED_OUT') {
-      return true;
-    }
-    
-    // Case 3: NO_CODE submissions (no completion code)
-    if (!submission.study_code || submission.study_code.trim() === '') {
-      return true;
-    }
-    
-    return false;
-  }
+
 
   /**
    * Atomic-style helper to increase study places by a delta
@@ -783,6 +664,29 @@ export class ProlificService {
         total_available_places: newPlaces,
       });
       
+      // Update stored cost if participant count changed significantly
+      if (delta > 0) {
+        try {
+          const newStudyCost = await this.calculateStudyCost(
+            study.reward,
+            newPlaces,
+          );
+          
+          await this.testsService.updateStudyCost(
+            study.internal_name || study.name,
+            studyId,
+            newStudyCost.total_cost,
+            newPlaces,
+            study.reward
+          );
+          
+          this.logger.log(`Updated stored cost for study ${studyId} after increasing places`);
+        } catch (costError) {
+          this.logger.warn(`Failed to update stored cost for study ${studyId}:`, costError);
+          // Don't fail the main operation if cost update fails
+        }
+      }
+      
       this.logger.log(
         `Increased places by ${delta} for study ${studyId} (${reason}): ${study.total_available_places} → ${newPlaces}`
       );
@@ -791,6 +695,44 @@ export class ProlificService {
         `Failed to increase places by ${delta} for study ${studyId}:`,
         error,
       );
+      throw error;
+    }
+  }
+
+  /**
+   * Recalculate and update costs for existing studies
+   * Useful for updating costs after Prolific pricing changes
+   */
+  public async recalculateStudyCosts(studyIds: string[]): Promise<void> {
+    try {
+      let updatedCount = 0;
+      
+      for (const studyId of studyIds) {
+        try {
+          const study = await this.getStudy(studyId);
+          const studyCost = await this.calculateStudyCost(
+            study.reward,
+            study.total_available_places,
+          );
+          
+          await this.testsService.updateStudyCost(
+            study.internal_name || study.name,
+            studyId,
+            studyCost.total_cost,
+            study.total_available_places,
+            study.reward
+          );
+          
+          updatedCount++;
+          this.logger.log(`Recalculated cost for study ${studyId}: ${studyCost.total_cost} cents`);
+        } catch (error) {
+          this.logger.error(`Failed to recalculate cost for study ${studyId}:`, error);
+        }
+      }
+      
+      this.logger.log(`Successfully recalculated costs for ${updatedCount}/${studyIds.length} studies`);
+    } catch (error) {
+      this.logger.error('Failed to recalculate study costs:', error);
       throw error;
     }
   }
