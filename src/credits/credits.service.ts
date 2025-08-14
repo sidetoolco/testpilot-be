@@ -256,7 +256,7 @@ export class CreditsService {
           {
             company_id: companyId,
             stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
-            amount_cents: creditsDifference * 49, // Assuming 49 cents per credit (same as Stripe pricing)
+            amount_cents: creditsDifference * 4900, // $49.00 per credit (same as Stripe pricing)
             credits_purchased: creditsDifference,
             status: PaymentStatus.COMPLETED,
           },

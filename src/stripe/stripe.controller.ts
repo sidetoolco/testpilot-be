@@ -33,7 +33,7 @@ export class StripeController {
   ) {
     return await this.stripeService.createPaymentIntent(
       companyId,
-      credits * 49,
+      credits * 4900, // $49.00 per credit
       credits,
       couponId,
     );
