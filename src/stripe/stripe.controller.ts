@@ -18,6 +18,7 @@ import { StripeService } from './stripe.service';
 import { CompanyGuard, JwtAuthGuard, AdminGuard } from 'auth/guards';
 import { CompanyId } from 'auth/decorators';
 import { CreatePaymentIntentDto, CreateCouponDto, UpdateCouponDto, ListCouponsDto } from './dto';
+import { PRICE_PER_CREDIT_CENTS } from 'config/pricing';
 
 @Controller('stripe')
 export class StripeController {
@@ -33,7 +34,7 @@ export class StripeController {
   ) {
     return await this.stripeService.createPaymentIntent(
       companyId,
-      credits * 4900, // $49.00 per credit
+      Math.round(credits * PRICE_PER_CREDIT_CENTS), // $49.00 per credit
       credits,
       couponId,
     );

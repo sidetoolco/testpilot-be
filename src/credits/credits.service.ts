@@ -14,12 +14,12 @@ import {
   CreditUsage,
 } from 'lib/interfaces/entities.interface';
 import { PaymentStatus } from './enums';
+import { CREDITS_PER_TESTER, CREDITS_PER_TESTER_WITH_CUSTOM_SCREENING, PRICE_PER_CREDIT_CENTS } from 'config/pricing';
 
 @Injectable()
 export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
-  private readonly CREDITS_PER_TESTER = 1;
-  private readonly CREDITS_PER_TESTER_WITH_CUSTOM_SCREENING = 1.1;
+
 
   constructor(private readonly supabaseService: SupabaseService) {}
 
@@ -256,7 +256,7 @@ export class CreditsService {
           {
             company_id: companyId,
             stripe_payment_intent_id: `admin_${Date.now()}`, // Generate a unique admin identifier
-            amount_cents: creditsDifference * 4900, // $49.00 per credit (same as Stripe pricing)
+            amount_cents: Math.round(creditsDifference * PRICE_PER_CREDIT_CENTS), // $49.00 per credit (same as Stripe pricing)
             credits_purchased: creditsDifference,
             status: PaymentStatus.COMPLETED,
           },
@@ -594,8 +594,8 @@ export class CreditsService {
     return (
       targetParticipantCount *
       (customScreeningEnabled
-        ? this.CREDITS_PER_TESTER_WITH_CUSTOM_SCREENING
-        : this.CREDITS_PER_TESTER)
+        ? CREDITS_PER_TESTER_WITH_CUSTOM_SCREENING
+        : CREDITS_PER_TESTER)
     );
   }
 
