@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BaseHttpClient } from '../lib/http/base-http.client';
 
 @Injectable()
 export class ScraperHttpClient extends BaseHttpClient {
   private readonly apiKey: string;
+  private readonly logger = new Logger(ScraperHttpClient.name);
 
   constructor(configService: ConfigService) {
     const scraperApiKey = configService.get('SCRAPER_API_KEY');
@@ -20,8 +21,28 @@ export class ScraperHttpClient extends BaseHttpClient {
   }
 
   public async get<T>(path: string, config?: RequestInit): Promise<T> {
+    // Extract the path without query parameters
+    const urlPath = path.split('?')[0];
+    
+    // Get existing query parameters from the path
     const url = new URL(path, this.baseUrl);
-    url.searchParams.append('api_key', this.apiKey);
-    return super.get<T>(url.pathname + url.search, config);
+    const existingParams: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      existingParams[key] = value;
+    });
+    
+    // Add our required parameters - using premium=true for cost optimization
+    // premium=true costs 10 credits vs ultra_premium=true which costs 30 credits
+    const params = {
+      ...existingParams,
+      api_key: this.apiKey,
+      premium: 'true', // 10 credits - sufficient for most protected domains
+    };
+    
+    // Log the request for debugging
+    this.logger.log(`ScraperAPI Request: ${urlPath} with params: ${JSON.stringify(params)}`);
+    
+    // Use the base client's parameter system
+    return super.get<T>(urlPath, { ...config, params });
   }
 }
