@@ -36,37 +36,53 @@ export class WalmartService {
     companyId: string,
   ) {
     try {
+      // Batch check for existing products - use correct Supabase syntax
+      const walmartIds = products.map(p => p.walmart_id);
+      
+      // Use individual queries if the 'in' operator doesn't work
+      let existingProducts: WalmartProduct[] = [];
+      for (const walmartId of walmartIds) {
+        const existing = await this.supabaseService.findOne<WalmartProduct>(
+          TableName.WALMART_PRODUCTS,
+          { walmart_id: walmartId, company_id: companyId }
+        );
+        if (existing) {
+          existingProducts.push(existing);
+        }
+      }
+      
+      // Create lookup map for faster access
+      const existingMap = new Map(existingProducts.map(p => [p.walmart_id, p]));
+      
       let savedProducts = [];
       let newProductsCount = 0;
       let existingProductsCount = 0;
+      let newProductsToInsert = [];
 
       for (const product of products) {
-        // Check if product already exists before inserting
-        const existingProduct = await this.supabaseService.findOne<WalmartProduct>(
-          TableName.WALMART_PRODUCTS,
-          { walmart_id: product.walmart_id, company_id: companyId }
-        );
-
+        const existingProduct = existingMap.get(product.walmart_id);
+        
         if (existingProduct) {
           // If product exists: skip insert, use existing product
-          console.log(`Product ${product.walmart_id} already exists, skipping insert...`);
           savedProducts.push(existingProduct);
           existingProductsCount++;
-          continue; // Skip to next product
-        }
-
-        // If product is new: insert normally
-        console.log(`Inserting new product ${product.walmart_id}...`);
-        const newProduct = await this.supabaseService.insert<WalmartProduct>(
-          TableName.WALMART_PRODUCTS,
-          {
+        } else {
+          // If product is new: prepare for batch insert
+          newProductsToInsert.push({
             ...product,
             company_id: companyId,
-          },
-        );
+          });
+          newProductsCount++;
+        }
+      }
 
-        savedProducts.push(...newProduct);
-        newProductsCount++;
+      // Batch insert new products if any
+      if (newProductsToInsert.length > 0) {
+        const newProducts = await this.supabaseService.insert<WalmartProduct>(
+          TableName.WALMART_PRODUCTS,
+          newProductsToInsert
+        );
+        savedProducts.push(...newProducts);
       }
 
       console.log(`=== SAVE SUMMARY ===`);
@@ -88,39 +104,52 @@ export class WalmartService {
     products: WalmartProduct[],
     companyId: string,
   ) {
+    // Batch check for existing products - use correct Supabase syntax
+    const walmartIds = products.map(p => p.walmart_id);
+    
+    // Use individual queries if the 'in' operator doesn't work
+    let existingProducts: WalmartProduct[] = [];
+    for (const walmartId of walmartIds) {
+      const existing = await this.supabaseService.findOne<WalmartProduct>(
+        TableName.WALMART_PRODUCTS,
+        { walmart_id: walmartId, company_id: companyId }
+      );
+      if (existing) {
+        existingProducts.push(existing);
+      }
+    }
+    
+    // Create lookup map for faster access
+    const existingMap = new Map(existingProducts.map(p => [p.walmart_id, p]));
+    
     let savedProducts = [];
+    let newProductsToInsert = [];
 
     for (const product of products) {
-      // Check if product already exists by walmart_id and company_id
-      const existingProduct = await this.supabaseService.findOne<WalmartProduct>(
-        TableName.WALMART_PRODUCTS,
-        {
-          walmart_id: product.walmart_id,
-          company_id: companyId,
-        },
-      );
-
+      const existingProduct = existingMap.get(product.walmart_id);
+      
       if (existingProduct) {
         // If product exists: skip insert, use existing product
-        console.log(`Product ${product.walmart_id} already exists in preview, skipping...`);
         savedProducts.push(existingProduct);
-        continue;
-      }
-
-      // If product is new: insert normally
-      console.log(`Inserting new preview product ${product.walmart_id}...`);
-      const savedProduct = await this.supabaseService.insert<WalmartProduct>(
-        TableName.WALMART_PRODUCTS,
-        {
+      } else {
+        // If product is new: prepare for batch insert
+        newProductsToInsert.push({
           ...product,
           company_id: companyId,
-        },
-      );
-
-      savedProducts.push(...savedProduct);
+        });
+      }
     }
 
-    console.log(`Preview: Successfully processed ${savedProducts.length} products (some new, some existing)`);
+    // Batch insert new products if any
+    if (newProductsToInsert.length > 0) {
+      const newProducts = await this.supabaseService.insert<WalmartProduct>(
+        TableName.WALMART_PRODUCTS,
+        newProductsToInsert
+      );
+      savedProducts.push(...newProducts);
+    }
+
+    console.log(`Preview: Successfully processed ${savedProducts.length} products (${existingProducts.length} existing, ${newProductsToInsert.length} new)`);
     return savedProducts;
   }
 

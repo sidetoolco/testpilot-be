@@ -39,9 +39,6 @@ export class ScraperHttpClient extends BaseHttpClient {
       premium: 'true', // 10 credits - sufficient for most protected domains
     };
     
-    // Log the request for debugging
-    this.logger.log(`ScraperAPI Request: ${urlPath} with params: ${JSON.stringify(params)}`);
-    
     // Use the base client's parameter system
     return super.get<T>(urlPath, { ...config, params });
   }
