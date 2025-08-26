@@ -67,12 +67,29 @@ export class WalmartService {
           savedProducts.push(existingProduct);
           existingProductsCount++;
         } else {
-          // If product is new: prepare for batch insert
-          newProductsToInsert.push({
-            ...product,
-            company_id: companyId,
-          });
-          newProductsCount++;
+          // If product is new: fetch detailed data and prepare for batch insert
+          try {
+            console.log(`Fetching detailed data for product ${product.walmart_id}...`);
+            const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
+            
+            // Merge basic product data with detailed data
+            const enrichedProduct = {
+              ...product,
+              ...this.enrichProductWithDetails(product, detailedProduct),
+              company_id: companyId,
+            };
+            
+            newProductsToInsert.push(enrichedProduct);
+            newProductsCount++;
+          } catch (error) {
+            console.error(`Failed to fetch detailed data for ${product.walmart_id}:`, error);
+            // Fallback to basic product data if detailed fetch fails
+            newProductsToInsert.push({
+              ...product,
+              company_id: companyId,
+            });
+            newProductsCount++;
+          }
         }
       }
 
@@ -132,11 +149,27 @@ export class WalmartService {
         // If product exists: skip insert, use existing product
         savedProducts.push(existingProduct);
       } else {
-        // If product is new: prepare for batch insert
-        newProductsToInsert.push({
-          ...product,
-          company_id: companyId,
-        });
+        // If product is new: fetch detailed data and prepare for batch insert
+        try {
+          console.log(`Preview: Fetching detailed data for product ${product.walmart_id}...`);
+          const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
+          
+          // Merge basic product data with detailed data
+          const enrichedProduct = {
+            ...product,
+            ...this.enrichProductWithDetails(product, detailedProduct),
+            company_id: companyId,
+          };
+          
+          newProductsToInsert.push(enrichedProduct);
+        } catch (error) {
+          console.error(`Preview: Failed to fetch detailed data for ${product.walmart_id}:`, error);
+          // Fallback to basic product data if detailed fetch fails
+          newProductsToInsert.push({
+            ...product,
+            company_id: companyId,
+          });
+        }
       }
     }
 
@@ -166,6 +199,46 @@ export class WalmartService {
     url.searchParams.append('product_id', productId);
     
     return this.scraperHttpClient.get<WalmartProductDetail>(url.pathname + url.search);
+  }
+
+  private enrichProductWithDetails(basicProduct: WalmartProduct, detailedProduct: any) {
+    // Extract additional fields from detailed product response
+    return {
+      // Handle images field - convert string to array if needed
+      images: this.formatImagesField(detailedProduct.images),
+      product_category: detailedProduct.product_category || null,
+      product_short_description: detailedProduct.product_short_description || null,
+      product_availability: detailedProduct.product_availability || null,
+      sold_by: detailedProduct.sold_by || null,
+      sku: detailedProduct.sku || null,
+      gtin: detailedProduct.gtin || null,
+      brand: detailedProduct.brand || null,
+      bullet_points: detailedProduct.bullet_points || null,
+      // Add any other fields you want to capture
+    };
+  }
+
+  private formatImagesField(images: any): string[] | null {
+    if (!images) return null;
+    
+    let imageArray: string[] = [];
+    
+    // If images is already an array, use it
+    if (Array.isArray(images)) {
+      imageArray = images;
+    }
+    // If images is a string, convert to array with single item
+    else if (typeof images === 'string') {
+      imageArray = [images];
+    }
+    // If images is an object, try to extract URLs
+    else if (typeof images === 'object') {
+      if (images.thumbnail) imageArray = [images.thumbnail];
+      else if (images.main) imageArray = [images.main];
+    }
+    
+    // Limit to only 5 images and return
+    return imageArray.length > 0 ? imageArray.slice(0, 5) : null;
   }
 
   private async saveProductsInCompetitorTable(

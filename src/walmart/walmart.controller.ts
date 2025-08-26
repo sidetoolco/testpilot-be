@@ -61,12 +61,61 @@ export class WalmartController {
 
   @UseInterceptors(CacheInterceptor)
   @Get('products/walmart/:productId')
-  async getWalmartProductDetail(@Param('productId') productId: string) {
+  async getWalmartProductDetail(
+    @Param('productId') productId: string,
+    @CurrentUser('id') userId?: any,
+  ) {
     if (!productId) {
       throw new BadRequestException('Missing productId parameter');
     }
 
-    return this.walmartService.getWalmartProductDetail(productId);
+    // First try to get from database (fast)
+    try {
+      const savedProduct = await this.walmartService.getSavedProduct(productId);
+      if (savedProduct) {
+        console.log(`Product ${productId} found in database, returning cached data`);
+        return savedProduct; // Return cached data
+      }
+    } catch (error) {
+      console.log(`Product ${productId} not found in database, fetching from API...`);
+    }
+
+    // If not in database, fetch from API and save (like Amazon does)
+    try {
+      const productDetail = await this.walmartService.getWalmartProductDetail(productId);
+      
+      // Auto-save if user is authenticated (like Amazon saveAmazonProducts)
+      if (userId) {
+        const userCompanyId = await this.usersService.getUserCompanyId(userId);
+        if (userCompanyId) {
+          console.log(`Auto-saving product ${productId} to database for company ${userCompanyId}`);
+          // Convert and save the product using existing saveWalmartProductPreview method
+          const productToSave = this.convertToWalmartProduct(productDetail, userCompanyId);
+          await this.walmartService.saveWalmartProductPreview([productToSave], userCompanyId);
+        }
+      }
+      
+      return productDetail;
+    } catch (error) {
+      throw new BadRequestException(`Failed to fetch product: ${error.message}`);
+    }
+  }
+
+  private convertToWalmartProduct(productDetail: any, companyId: string) {
+    // Get the first variant for price and image
+    const firstVariant = productDetail.variants?.[0];
+    
+    return {
+      walmart_id: productDetail.sku || productDetail.id,
+      price: firstVariant?.price || 0,
+      image_url: firstVariant?.thumbnail || productDetail.images || '',
+      product_url: productDetail.product_url,
+      rating: productDetail.average_rating || 0,
+      reviews_count: productDetail.total_reviews || 0,
+      search_term: productDetail.product_name || '',
+      title: productDetail.product_name || '',
+      company_id: companyId,
+    };
   }
 
   @Get('products/saved/:id')
