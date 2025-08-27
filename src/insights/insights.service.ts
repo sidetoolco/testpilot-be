@@ -252,9 +252,34 @@ export class InsightsService {
         throw new NotFoundException('Test competitors not found');
       }
 
+      // Dynamically fetch product details based on product_type
+      const competitorsWithProducts = await Promise.all(
+        testCompetitors.map(async (competitor: any) => {
+          let productTable: TableName = TableName.AMAZON_PRODUCTS; // default
+          
+          if (competitor.product_type === 'walmart_product') {
+            productTable = TableName.WALMART_PRODUCTS;
+          } else if (competitor.product_type === 'user_product') {
+            productTable = TableName.PRODUCTS;
+          }
+          
+          // Fetch product details from the appropriate table
+          const productDetails = await this.supabaseService.findOne(
+            productTable,
+            { id: competitor.product_id },
+            'title, image_url, price, rating, reviews_count'
+          );
+          
+          return {
+            ...competitor,
+            product: productDetails
+          };
+        })
+      );
+
       const groupedData = this.groupCompetitorMetrics(competitorsComparison);
       const results = this.calculateCompetitorResults(
-        testCompetitors,
+        competitorsWithProducts,
         groupedData,
         variation,
         testId,
