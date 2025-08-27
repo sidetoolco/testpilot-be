@@ -7,7 +7,7 @@ export const GET_TEST_DATA_QUERY = `
           updated_at,
           block,
           competitors:test_competitors(
-            product:amazon_products(id, title, image_url, price)
+            id, product_id, product_type
           ),
           variations:test_variations(
             product:products(id, title, image_url, price),
@@ -21,9 +21,9 @@ export const GET_TEST_DATA_QUERY = `
             improve_suggestions,
             likes_most,
             products(id, title, image_url, price),
-            tester_id(
+            tester_id,
+            testers_session!inner(
               variation_type,
-              id,
               prolific_pid,
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
@@ -33,10 +33,10 @@ export const GET_TEST_DATA_QUERY = `
             likes_most,
             choose_reason,
             products(id, title, image_url, price),
-            amazon_products(id, title, image_url, price),
-            tester_id(
+            competitor_id,
+            tester_id,
+            testers_session!inner(
               variation_type,
-              id,
               prolific_pid,
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
