@@ -237,10 +237,6 @@ export class InsightsService {
           {
             test_id: testId,
           },
-          `
-          *,
-          product:amazon_products ( title, image_url, price, rating, reviews_count )
-        `,
         ),
         this.supabaseService.findMany(TableName.RESPONSES_COMPARISONS, {
           test_id: testId,
