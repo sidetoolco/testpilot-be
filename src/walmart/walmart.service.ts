@@ -345,6 +345,7 @@ export class WalmartService {
       const dto = competitors.map((competitor) => ({
         test_id: testId,
         product_id: competitor.id, // Use the database UUID from the saved product
+        product_type: 'walmart_product' // Add this line to fix foreign key constraint violation
       }));
 
       const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, dto);
