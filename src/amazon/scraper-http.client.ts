@@ -31,12 +31,12 @@ export class ScraperHttpClient extends BaseHttpClient {
       existingParams[key] = value;
     });
     
-    // Add our required parameters - using premium=true for cost optimization
-    // premium=true costs 10 credits vs ultra_premium=true which costs 30 credits
+    // Add our required parameters - using ultra_premium=true for protected domains like Walmart
+    // ultra_premium=true costs 30 credits but guarantees access to protected domains
     const params = {
       ...existingParams,
       api_key: this.apiKey,
-      premium: 'true', // 10 credits - sufficient for most protected domains
+      ultra_premium: 'true', // 30 credits - required for protected domains like Walmart
     };
     
     // Use the base client's parameter system

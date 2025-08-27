@@ -59,37 +59,77 @@ export class WalmartService {
       let existingProductsCount = 0;
       let newProductsToInsert = [];
 
-      for (const product of products) {
-        const existingProduct = existingMap.get(product.walmart_id);
+      // Fetch detailed data for all new products in parallel (MUCH FASTER!)
+      const newProductsToFetch = products.filter(product => !existingMap.has(product.walmart_id));
+      
+      if (newProductsToFetch.length > 0) {
+        console.log(`Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
         
-        if (existingProduct) {
-          // If product exists: skip insert, use existing product
-          savedProducts.push(existingProduct);
-          existingProductsCount++;
-        } else {
-          // If product is new: fetch detailed data and prepare for batch insert
+                    // Fetch detailed products in batches of 3 to avoid overwhelming the API
+      const batchSize = 3;
+      const detailedProductsResults = [];
+      
+      for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
+        const batch = newProductsToFetch.slice(i, i + batchSize);
+        console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(async (product) => {
           try {
-            console.log(`Fetching detailed data for product ${product.walmart_id}...`);
             const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
-            
-            // Merge basic product data with detailed data
-            const enrichedProduct = {
-              ...product,
-              ...this.enrichProductWithDetails(product, detailedProduct),
-              company_id: companyId,
+            return {
+              product,
+              detailedProduct,
+              success: true
             };
-            
-            newProductsToInsert.push(enrichedProduct);
-            newProductsCount++;
           } catch (error) {
             console.error(`Failed to fetch detailed data for ${product.walmart_id}:`, error);
+            return {
+              product,
+              detailedProduct: null,
+              success: false
+            };
+          }
+        });
+        
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        detailedProductsResults.push(...batchResults);
+        
+        // Add delay between batches to be safe
+        if (i + batchSize < newProductsToFetch.length) {
+          console.log(`Waiting 1 second before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+        
+        // Process results
+        for (const result of detailedProductsResults) {
+          if (result.success && result.detailedProduct) {
+            const enrichedProduct = {
+              ...result.product,
+              ...this.enrichProductWithDetails(result.product, result.detailedProduct),
+              company_id: companyId,
+            };
+            newProductsToInsert.push(enrichedProduct);
+            newProductsCount++;
+          } else {
             // Fallback to basic product data if detailed fetch fails
             newProductsToInsert.push({
-              ...product,
+              ...result.product,
               company_id: companyId,
             });
             newProductsCount++;
           }
+        }
+      }
+      
+      // Add existing products
+      for (const product of products) {
+        const existingProduct = existingMap.get(product.walmart_id);
+        if (existingProduct) {
+          savedProducts.push(existingProduct);
+          existingProductsCount++;
         }
       }
 
@@ -142,34 +182,74 @@ export class WalmartService {
     let savedProducts = [];
     let newProductsToInsert = [];
 
-    for (const product of products) {
-      const existingProduct = existingMap.get(product.walmart_id);
+    // Fetch detailed data for all new products in parallel (MUCH FASTER!)
+    const newProductsToFetch = products.filter(product => !existingMap.has(product.walmart_id));
+    
+    if (newProductsToFetch.length > 0) {
+      console.log(`Preview: Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
       
-      if (existingProduct) {
-        // If product exists: skip insert, use existing product
-        savedProducts.push(existingProduct);
-      } else {
-        // If product is new: fetch detailed data and prepare for batch insert
-        try {
-          console.log(`Preview: Fetching detailed data for product ${product.walmart_id}...`);
-          const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
-          
-          // Merge basic product data with detailed data
+      // Fetch detailed products in batches of 3 to avoid overwhelming the API
+      const batchSize = 3;
+      const detailedProductsResults = [];
+      
+      for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
+        const batch = newProductsToFetch.slice(i, i + batchSize);
+        console.log(`Preview: Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
+        
+        // Process batch in parallel
+        const batchPromises = batch.map(async (product) => {
+          try {
+            const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
+            return {
+              product,
+              detailedProduct,
+              success: true
+            };
+          } catch (error) {
+            console.error(`Preview: Failed to fetch detailed data for ${product.walmart_id}:`, error);
+            return {
+              product,
+              detailedProduct: null,
+              success: false
+            };
+          }
+        });
+        
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        detailedProductsResults.push(...batchResults);
+        
+        // Add delay between batches to be safe
+        if (i + batchSize < newProductsToFetch.length) {
+          console.log(`Preview: Waiting 1 second before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      // Process results
+      for (const result of detailedProductsResults) {
+        if (result.success && result.detailedProduct) {
           const enrichedProduct = {
-            ...product,
-            ...this.enrichProductWithDetails(product, detailedProduct),
+            ...result.product,
+            ...this.enrichProductWithDetails(result.product, result.detailedProduct),
             company_id: companyId,
           };
-          
           newProductsToInsert.push(enrichedProduct);
-        } catch (error) {
-          console.error(`Preview: Failed to fetch detailed data for ${product.walmart_id}:`, error);
+        } else {
           // Fallback to basic product data if detailed fetch fails
           newProductsToInsert.push({
-            ...product,
+            ...result.product,
             company_id: companyId,
           });
         }
+      }
+    }
+    
+    // Add existing products
+    for (const product of products) {
+      const existingProduct = existingMap.get(product.walmart_id);
+      if (existingProduct) {
+        savedProducts.push(existingProduct);
       }
     }
 
@@ -187,23 +267,18 @@ export class WalmartService {
   }
 
   private queryProductsFromApi(searchTerm: string) {
-    const url = new URL('/structured/walmart/search', this.scraperHttpClient['baseUrl']);
-    url.searchParams.append('query', searchTerm);
-    url.searchParams.append('page', '1');
-    
-    return this.scraperHttpClient.get<WalmartResponse>(url.pathname + url.search);
+    // Pass the path with query parameters, ScraperHttpClient will handle premium=true automatically
+    return this.scraperHttpClient.get<WalmartResponse>(`/structured/walmart/search?query=${encodeURIComponent(searchTerm)}&page=1`);
   }
 
   private queryProductDetailFromApi(productId: string) {
-    const url = new URL('/structured/walmart/product', this.scraperHttpClient['baseUrl']);
-    url.searchParams.append('product_id', productId);
-    
-    return this.scraperHttpClient.get<WalmartProductDetail>(url.pathname + url.search);
+    // Pass the path with query parameters, ScraperHttpClient will handle premium=true automatically
+    return this.scraperHttpClient.get<WalmartProductDetail>(`/structured/walmart/product?product_id=${productId}`);
   }
 
   private enrichProductWithDetails(basicProduct: WalmartProduct, detailedProduct: any) {
     // Extract additional fields from detailed product response
-    return {
+    const enriched = {
       // Handle images field - convert string to array if needed
       images: this.formatImagesField(detailedProduct.images),
       product_category: detailedProduct.product_category || null,
@@ -216,6 +291,14 @@ export class WalmartService {
       bullet_points: detailedProduct.bullet_points || null,
       // Add any other fields you want to capture
     };
+    
+    // Log what we're capturing for debugging
+    console.log(`Enriching product ${detailedProduct.sku || detailedProduct.id}:`);
+    console.log(`  - Images: ${enriched.images ? enriched.images.length : 0} found`);
+    console.log(`  - Description: ${enriched.product_short_description ? 'Yes' : 'No'}`);
+    console.log(`  - Category: ${enriched.product_category || 'None'}`);
+    
+    return enriched;
   }
 
   private formatImagesField(images: any): string[] | null {
@@ -237,8 +320,19 @@ export class WalmartService {
       else if (images.main) imageArray = [images.main];
     }
     
-    // Limit to only 5 images and return
-    return imageArray.length > 0 ? imageArray.slice(0, 5) : null;
+    // Filter out invalid URLs and limit to exactly 5 images
+    const validImages = imageArray.filter(img => img && typeof img === 'string' && img.trim() !== '');
+    
+    if (validImages.length === 0) {
+      console.log('No valid images found in:', images);
+      return null;
+    }
+    
+    // Limit to exactly 5 images
+    const limitedImages = validImages.slice(0, 5);
+    console.log(`Formatted images: ${limitedImages.length} out of ${validImages.length} total`);
+    
+    return limitedImages;
   }
 
   private async saveProductsInCompetitorTable(
