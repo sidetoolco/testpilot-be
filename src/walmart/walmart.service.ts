@@ -65,43 +65,43 @@ export class WalmartService {
       if (newProductsToFetch.length > 0) {
         console.log(`Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
         
-                    // Fetch detailed products in batches of 3 to avoid overwhelming the API
-      const batchSize = 3;
-      const detailedProductsResults = [];
-      
-      for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
-        const batch = newProductsToFetch.slice(i, i + batchSize);
-        console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
+                    // Fetch detailed products in batches of 4 for better reliability
+        const batchSize = 4;
+        const detailedProductsResults = [];
         
-        // Process batch in parallel
-        const batchPromises = batch.map(async (product) => {
-          try {
-            const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
-            return {
-              product,
-              detailedProduct,
-              success: true
-            };
-          } catch (error) {
-            console.error(`Failed to fetch detailed data for ${product.walmart_id}:`, error);
-            return {
-              product,
-              detailedProduct: null,
-              success: false
-            };
+        for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
+          const batch = newProductsToFetch.slice(i, i + batchSize);
+          console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
+          
+          // Process batch in parallel
+          const batchPromises = batch.map(async (product) => {
+            try {
+              const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
+              return {
+                product,
+                detailedProduct,
+                success: true
+              };
+            } catch (error) {
+              console.error(`Failed to fetch detailed data for ${product.walmart_id}:`, error);
+              return {
+                product,
+                detailedProduct: null,
+                success: false
+              };
+            }
+          });
+          
+          // Wait for batch to complete
+          const batchResults = await Promise.all(batchPromises);
+          detailedProductsResults.push(...batchResults);
+          
+          // Add delay between batches to be safe
+          if (i + batchSize < newProductsToFetch.length) {
+            console.log(`Waiting 1 second before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
-        });
-        
-        // Wait for batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        detailedProductsResults.push(...batchResults);
-        
-        // Add delay between batches to be safe
-        if (i + batchSize < newProductsToFetch.length) {
-          console.log(`Waiting 1 second before next batch...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-      }
         
         // Process results
         for (const result of detailedProductsResults) {
@@ -188,8 +188,8 @@ export class WalmartService {
     if (newProductsToFetch.length > 0) {
       console.log(`Preview: Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
       
-      // Fetch detailed products in batches of 3 to avoid overwhelming the API
-      const batchSize = 3;
+      // Fetch detailed products in batches of 4 for better reliability
+      const batchSize = 4;
       const detailedProductsResults = [];
       
       for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
