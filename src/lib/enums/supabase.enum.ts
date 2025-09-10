@@ -7,6 +7,7 @@ export enum TableName {
   TEST_TIMES = 'test_times',
   RESPONSES_SURVEYS = 'responses_surveys',
   RESPONSES_COMPARISONS = 'responses_comparisons',
+  RESPONSES_COMPARISONS_WALMART = 'responses_comparisons_walmart',
   INSIGHT_STATUS = 'insight_status',
   AI_INSIGHTS = 'ia_insights',
   TEST_SUMMARY = 'summary',

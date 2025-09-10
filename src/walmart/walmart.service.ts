@@ -135,11 +135,28 @@ export class WalmartService {
 
       // Batch insert new products if any
       if (newProductsToInsert.length > 0) {
-        const newProducts = await this.supabaseService.insert<WalmartProduct>(
-          TableName.WALMART_PRODUCTS,
-          newProductsToInsert
+        // Filter out products with null walmart_id to avoid constraint violations
+        const validProductsToInsert = newProductsToInsert.filter(product => 
+          product.walmart_id && product.walmart_id.trim() !== ''
         );
-        savedProducts.push(...newProducts);
+        
+        if (validProductsToInsert.length > 0) {
+          const newProducts = await this.supabaseService.insert<WalmartProduct>(
+            TableName.WALMART_PRODUCTS,
+            validProductsToInsert
+          );
+          savedProducts.push(...newProducts);
+        }
+        
+        // Log any products that were skipped due to missing walmart_id
+        const skippedProducts = newProductsToInsert.filter(product => 
+          !product.walmart_id || product.walmart_id.trim() === ''
+        );
+        if (skippedProducts.length > 0) {
+          console.warn(`Skipped ${skippedProducts.length} products due to missing walmart_id:`, 
+            skippedProducts.map(p => ({ title: p.title, walmart_id: p.walmart_id }))
+          );
+        }
       }
 
       console.log(`=== SAVE SUMMARY ===`);
@@ -255,11 +272,28 @@ export class WalmartService {
 
     // Batch insert new products if any
     if (newProductsToInsert.length > 0) {
-      const newProducts = await this.supabaseService.insert<WalmartProduct>(
-        TableName.WALMART_PRODUCTS,
-        newProductsToInsert
+      // Filter out products with null walmart_id to avoid constraint violations
+      const validProductsToInsert = newProductsToInsert.filter(product => 
+        product.walmart_id && product.walmart_id.trim() !== ''
       );
-      savedProducts.push(...newProducts);
+      
+      if (validProductsToInsert.length > 0) {
+        const newProducts = await this.supabaseService.insert<WalmartProduct>(
+          TableName.WALMART_PRODUCTS,
+          validProductsToInsert
+        );
+        savedProducts.push(...newProducts);
+      }
+      
+      // Log any products that were skipped due to missing walmart_id
+      const skippedProducts = newProductsToInsert.filter(product => 
+        !product.walmart_id || product.walmart_id.trim() === ''
+      );
+      if (skippedProducts.length > 0) {
+        console.warn(`Preview: Skipped ${skippedProducts.length} products due to missing walmart_id:`, 
+          skippedProducts.map(p => ({ title: p.title, walmart_id: p.walmart_id }))
+        );
+      }
     }
 
     console.log(`Preview: Successfully processed ${savedProducts.length} products (${existingProducts.length} existing, ${newProductsToInsert.length} new)`);
@@ -345,7 +379,7 @@ export class WalmartService {
       const dto = competitors.map((competitor) => ({
         test_id: testId,
         product_id: competitor.id, // Use the database UUID from the saved product
-        product_type: 'walmart_product' // Add this line to fix foreign key constraint violation
+        product_type: 'walmart_product' // Add this line!
       }));
 
       const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, dto);

@@ -352,9 +352,13 @@ export class TestsService {
     const surveysByType = this.groupResponsesByType(
       data.responses_surveys || [],
     );
-    const comparisonsByType = this.groupResponsesByType(
-      data.responses_comparisons || [],
-    );
+    
+    // Use Walmart responses if they exist, otherwise use Amazon responses
+    const comparisonResponses = (data.responses_comparisons_walmart?.length || 0) > 0 
+      ? data.responses_comparisons_walmart || []
+      : data.responses_comparisons || [];
+    
+    const comparisonsByType = this.groupResponsesByType(comparisonResponses);
 
     return {
       id: data.id,
@@ -378,7 +382,8 @@ export class TestsService {
       },
       completed_sessions:
         (data.responses_surveys?.length || 0) +
-        (data.responses_comparisons?.length || 0),
+        (data.responses_comparisons?.length || 0) +
+        (data.responses_comparisons_walmart?.length || 0),
       responses: {
         surveys: surveysByType,
         comparisons: comparisonsByType,

@@ -20,6 +20,9 @@ export const GET_TEST_DATA_QUERY = `
           responses_surveys(
             improve_suggestions,
             likes_most,
+            appetizing,
+            target_audience,
+            novelty,
             products(id, title, image_url, price),
             tester_id(
               variation_type,
@@ -32,8 +35,27 @@ export const GET_TEST_DATA_QUERY = `
             improve_suggestions,
             likes_most,
             choose_reason,
+            appetizing,
+            target_audience,
+            novelty,
             products(id, title, image_url, price),
             amazon_products(id, title, image_url, price),
+            tester_id(
+              variation_type,
+              id,
+              prolific_pid,
+              shopper_demographic(id_prolific, age, sex, country_residence)
+            )
+          ),
+          responses_comparisons_walmart(
+            improve_suggestions,
+            likes_most,
+            choose_reason,
+            appetizing,
+            target_audience,
+            novelty,
+            products(id, title, image_url, price),
+            walmart_products(id, title, image_url, price),
             tester_id(
               variation_type,
               id,

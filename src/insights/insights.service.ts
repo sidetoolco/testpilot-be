@@ -982,15 +982,25 @@ export class InsightsService {
         testId,
       );
 
-      // Get comparison responses
-      const comparisonResponses =
-        await this.supabaseService.findMany<ResponseComparison>(
+      // Get comparison responses - try Walmart first, then Amazon
+      let comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        {
+          test_id: testId,
+          product_id: variation.product_id,
+        },
+      );
+
+      // If no Walmart responses, try Amazon
+      if (comparisonResponses.length === 0) {
+        comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
           TableName.RESPONSES_COMPARISONS,
           {
             test_id: testId,
             product_id: variation.product_id,
           },
         );
+      }
 
       // Format responses for this variant
       const formattedData = surveyResponsesForSummaryFormatter(
