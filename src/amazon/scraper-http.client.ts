@@ -20,26 +20,20 @@ export class ScraperHttpClient extends BaseHttpClient {
     this.apiKey = scraperApiKey;
   }
 
-  public async get<T>(path: string, config?: RequestInit): Promise<T> {
-    // Extract the path without query parameters
-    const urlPath = path.split('?')[0];
-    
-    // Get existing query parameters from the path
+  public async get<T>(path: string, config?: RequestInit & { params?: Record<string, string> }): Promise<T> {
     const url = new URL(path, this.baseUrl);
+    const urlPath = url.pathname;
+
     const existingParams: Record<string, string> = {};
-    url.searchParams.forEach((value, key) => {
-      existingParams[key] = value;
-    });
-    
-    // Add our required parameters - using ultra_premium=true for protected domains like Walmart
-    // ultra_premium=true costs 30 credits but guarantees access to protected domains
+    url.searchParams.forEach((value, key) => (existingParams[key] = value));
+
+    const clientParams = (config as any)?.params ?? {};
     const params = {
       ...existingParams,
+      ...clientParams, // allow caller to opt-in to ultra_premium
       api_key: this.apiKey,
-      ultra_premium: 'true', // 30 credits - required for protected domains like Walmart
     };
-    
-    // Use the base client's parameter system
+
     return super.get<T>(urlPath, { ...config, params });
   }
 }

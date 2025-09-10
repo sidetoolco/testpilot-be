@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
+  Logger,
 } from '@nestjs/common';
 import { WalmartService } from './walmart.service';
 import { CacheInterceptor } from '@nestjs/cache-manager';
@@ -19,6 +20,8 @@ import { UsersService } from 'users/users.service';
 @UseGuards(JwtAuthGuard)
 @Controller('walmart')
 export class WalmartController {
+  private readonly logger = new Logger(WalmartController.name);
+
   constructor(
     private readonly walmartService: WalmartService,
     private readonly usersService: UsersService,
@@ -48,7 +51,7 @@ export class WalmartController {
         return savedProduct;
       }
     } catch (error) {
-      console.log(`Product ${id} not found in saved products, trying Walmart API...`);
+      this.logger.debug(`Product ${id} not found in saved products, trying Walmart API...`);
     }
 
     // If not found in saved products, try to get from Walmart API
@@ -59,7 +62,6 @@ export class WalmartController {
     }
   }
 
-  @UseInterceptors(CacheInterceptor)
   @Get('products/walmart/:productId')
   async getWalmartProductDetail(
     @Param('productId') productId: string,
@@ -71,13 +73,14 @@ export class WalmartController {
 
     // First try to get from database (fast)
     try {
-      const savedProduct = await this.walmartService.getSavedProduct(productId);
+      const userCompanyId = userId ? await this.usersService.getUserCompanyId(userId) : undefined;
+      const savedProduct = await this.walmartService.getSavedProductByWalmartId(productId, userCompanyId);
       if (savedProduct) {
-        console.log(`Product ${productId} found in database, returning cached data`);
+        this.logger.debug(`Product ${productId} found in database, returning cached data`);
         return savedProduct; // Return cached data
       }
     } catch (error) {
-      console.log(`Product ${productId} not found in database, fetching from API...`);
+      this.logger.debug(`Product ${productId} not found in database, fetching from API...`);
     }
 
     // If not in database, fetch from API and save (like Amazon does)
@@ -88,7 +91,7 @@ export class WalmartController {
       if (userId) {
         const userCompanyId = await this.usersService.getUserCompanyId(userId);
         if (userCompanyId) {
-          console.log(`Auto-saving product ${productId} to database for company ${userCompanyId}`);
+          this.logger.debug(`Auto-saving product ${productId} to database for company ${userCompanyId}`);
           // Convert and save the product using existing saveWalmartProductPreview method
           const productToSave = this.convertToWalmartProduct(productDetail, userCompanyId);
           await this.walmartService.saveWalmartProductPreview([productToSave], userCompanyId);
@@ -105,10 +108,22 @@ export class WalmartController {
     // Get the first variant for price and image
     const firstVariant = productDetail.variants?.[0];
     
+    // Safely handle images field - ensure it's a string
+    let imageUrl = '';
+    if (firstVariant?.thumbnail) {
+      imageUrl = firstVariant.thumbnail;
+    } else if (productDetail.images) {
+      if (Array.isArray(productDetail.images)) {
+        imageUrl = productDetail.images[0] || '';
+      } else if (typeof productDetail.images === 'string') {
+        imageUrl = productDetail.images;
+      }
+    }
+    
     return {
       walmart_id: productDetail.sku || productDetail.id,
       price: firstVariant?.price || 0,
-      image_url: firstVariant?.thumbnail || productDetail.images || '',
+      image_url: imageUrl,
       product_url: productDetail.product_url,
       rating: productDetail.average_rating || 0,
       reviews_count: productDetail.total_reviews || 0,
@@ -134,11 +149,11 @@ export class WalmartController {
     @CurrentUser('id') userId?: any,
   ) {
     try {
-      console.log('=== WALMART PRODUCTS SAVE REQUEST ===');
-      console.log('Test ID:', testId);
-      console.log('User ID:', userId);
-      console.log('Products count:', products?.length);
-      console.log('First product sample:', JSON.stringify(products?.[0], null, 2));
+      this.logger.debug('Walmart products save request', {
+        testId,
+        userId,
+        productsCount: products?.length,
+      });
       
       const userCompanyId = await this.usersService.getUserCompanyId(userId);
 
@@ -147,7 +162,7 @@ export class WalmartController {
       }
 
       if (testId) {
-        console.log(`Saving Walmart products with testId: ${testId}, companyId: ${userCompanyId}`);
+        this.logger.debug(`Saving Walmart products with testId: ${testId}, companyId: ${userCompanyId}`);
         return await this.walmartService.saveWalmartProducts(
           products,
           testId,
@@ -155,17 +170,16 @@ export class WalmartController {
         );
       }
 
-      console.log(`Saving Walmart products preview for companyId: ${userCompanyId}`);
+      this.logger.debug(`Saving Walmart products preview for companyId: ${userCompanyId}`);
       return await this.walmartService.saveWalmartProductPreview(products, userCompanyId);
     } catch (error) {
-      console.error('=== WALMART PRODUCTS SAVE ERROR ===');
-      console.error('Error type:', error.constructor.name);
-      console.error('Error message:', error.message);
-      console.error('Error details:', error);
-      
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-      }
+      this.logger.error('Walmart products save error', {
+        errorType: error.constructor.name,
+        errorMessage: error.message,
+        testId,
+        userId,
+        productsCount: products?.length,
+      });
       
       throw new BadRequestException(`Failed to save Walmart products: ${error.message}`);
     }

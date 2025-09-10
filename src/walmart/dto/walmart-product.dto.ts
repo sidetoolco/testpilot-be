@@ -45,7 +45,7 @@ export class SaveWalmartProductsDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WalmartProduct)
-  @ArrayMinSize(11)
-  @ArrayMaxSize(11)
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
   products: WalmartProduct[];
 }

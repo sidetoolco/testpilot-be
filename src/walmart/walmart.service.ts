@@ -30,26 +30,33 @@ export class WalmartService {
     );
   }
 
+  public async getSavedProductByWalmartId(walmartId: string, companyId?: string) {
+    const query: any = { walmart_id: walmartId };
+    if (companyId) {
+      query.company_id = companyId;
+    }
+    return this.supabaseService.findOne<WalmartProduct>(
+      TableName.WALMART_PRODUCTS,
+      query,
+    );
+  }
+
   public async saveWalmartProducts(
     products: WalmartProduct[],
     testId: string,
     companyId: string,
   ) {
     try {
-      // Batch check for existing products - use correct Supabase syntax
+      // Batch check for existing products using single query
       const walmartIds = products.map(p => p.walmart_id);
       
-      // Use individual queries if the 'in' operator doesn't work
-      let existingProducts: WalmartProduct[] = [];
-      for (const walmartId of walmartIds) {
-        const existing = await this.supabaseService.findOne<WalmartProduct>(
-          TableName.WALMART_PRODUCTS,
-          { walmart_id: walmartId, company_id: companyId }
-        );
-        if (existing) {
-          existingProducts.push(existing);
+      const existingProducts = await this.supabaseService.findMany<WalmartProduct>(
+        TableName.WALMART_PRODUCTS,
+        { 
+          walmart_id: walmartIds,
+          company_id: companyId 
         }
-      }
+      );
       
       // Create lookup map for faster access
       const existingMap = new Map(existingProducts.map(p => [p.walmart_id, p]));
@@ -59,16 +66,13 @@ export class WalmartService {
       let existingProductsCount = 0;
       let newProductsToInsert = [];
 
-      // Fetch detailed data for all new products in parallel (MUCH FASTER!)
+      // Fetch detailed data for new products in batches of 4
       const newProductsToFetch = products.filter(product => !existingMap.has(product.walmart_id));
       
       if (newProductsToFetch.length > 0) {
-        console.log(`Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
+        console.log(`Fetching detailed data for ${newProductsToFetch.length} new products in batches of 4...`);
         
-                    // Fetch detailed products in batches of 4 for better reliability
         const batchSize = 4;
-        const detailedProductsResults = [];
-        
         for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
           const batch = newProductsToFetch.slice(i, i + batchSize);
           console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
@@ -77,48 +81,27 @@ export class WalmartService {
           const batchPromises = batch.map(async (product) => {
             try {
               const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
-              return {
-                product,
-                detailedProduct,
-                success: true
+              const enrichedProduct = {
+                ...product,
+                ...this.enrichProductWithDetails(product, detailedProduct),
+                company_id: companyId,
               };
+              return { product: enrichedProduct, success: true };
             } catch (error) {
-              console.error(`Failed to fetch detailed data for ${product.walmart_id}:`, error);
-              return {
-                product,
-                detailedProduct: null,
-                success: false
+              console.warn(`Failed to fetch detailed data for ${product.walmart_id}, using basic data:`, error.message);
+              return { 
+                product: { ...product, company_id: companyId }, 
+                success: false 
               };
             }
           });
           
           // Wait for batch to complete
           const batchResults = await Promise.all(batchPromises);
-          detailedProductsResults.push(...batchResults);
           
-          // Add delay between batches to be safe
-          if (i + batchSize < newProductsToFetch.length) {
-            console.log(`Waiting 1 second before next batch...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-        
-        // Process results
-        for (const result of detailedProductsResults) {
-          if (result.success && result.detailedProduct) {
-            const enrichedProduct = {
-              ...result.product,
-              ...this.enrichProductWithDetails(result.product, result.detailedProduct),
-              company_id: companyId,
-            };
-            newProductsToInsert.push(enrichedProduct);
-            newProductsCount++;
-          } else {
-            // Fallback to basic product data if detailed fetch fails
-            newProductsToInsert.push({
-              ...result.product,
-              company_id: companyId,
-            });
+          // Add results to insert list
+          for (const result of batchResults) {
+            newProductsToInsert.push(result.product);
             newProductsCount++;
           }
         }
@@ -133,7 +116,7 @@ export class WalmartService {
         }
       }
 
-      // Batch insert new products if any
+      // Batch upsert new products if any
       if (newProductsToInsert.length > 0) {
         // Filter out products with null walmart_id to avoid constraint violations
         const validProductsToInsert = newProductsToInsert.filter(product => 
@@ -141,9 +124,10 @@ export class WalmartService {
         );
         
         if (validProductsToInsert.length > 0) {
-          const newProducts = await this.supabaseService.insert<WalmartProduct>(
+          const newProducts = await this.supabaseService.upsertMany<WalmartProduct>(
             TableName.WALMART_PRODUCTS,
-            validProductsToInsert
+            validProductsToInsert,
+            'walmart_id,company_id'
           );
           savedProducts.push(...newProducts);
         }
@@ -178,20 +162,16 @@ export class WalmartService {
     products: WalmartProduct[],
     companyId: string,
   ) {
-    // Batch check for existing products - use correct Supabase syntax
+    // Batch check for existing products using single query
     const walmartIds = products.map(p => p.walmart_id);
     
-    // Use individual queries if the 'in' operator doesn't work
-    let existingProducts: WalmartProduct[] = [];
-    for (const walmartId of walmartIds) {
-      const existing = await this.supabaseService.findOne<WalmartProduct>(
-        TableName.WALMART_PRODUCTS,
-        { walmart_id: walmartId, company_id: companyId }
-      );
-      if (existing) {
-        existingProducts.push(existing);
+    const existingProducts = await this.supabaseService.findMany<WalmartProduct>(
+      TableName.WALMART_PRODUCTS,
+      { 
+        walmart_id: walmartIds,
+        company_id: companyId 
       }
-    }
+    );
     
     // Create lookup map for faster access
     const existingMap = new Map(existingProducts.map(p => [p.walmart_id, p]));
@@ -199,16 +179,13 @@ export class WalmartService {
     let savedProducts = [];
     let newProductsToInsert = [];
 
-    // Fetch detailed data for all new products in parallel (MUCH FASTER!)
+    // Fetch detailed data for new products in batches of 4
     const newProductsToFetch = products.filter(product => !existingMap.has(product.walmart_id));
     
     if (newProductsToFetch.length > 0) {
-      console.log(`Preview: Fetching detailed data for ${newProductsToFetch.length} products in parallel...`);
+      console.log(`Preview: Fetching detailed data for ${newProductsToFetch.length} new products in batches of 4...`);
       
-      // Fetch detailed products in batches of 4 for better reliability
       const batchSize = 4;
-      const detailedProductsResults = [];
-      
       for (let i = 0; i < newProductsToFetch.length; i += batchSize) {
         const batch = newProductsToFetch.slice(i, i + batchSize);
         console.log(`Preview: Processing batch ${Math.floor(i/batchSize) + 1}: ${batch.length} products`);
@@ -217,47 +194,27 @@ export class WalmartService {
         const batchPromises = batch.map(async (product) => {
           try {
             const detailedProduct = await this.getWalmartProductDetail(product.walmart_id);
-            return {
-              product,
-              detailedProduct,
-              success: true
+            const enrichedProduct = {
+              ...product,
+              ...this.enrichProductWithDetails(product, detailedProduct),
+              company_id: companyId,
             };
+            return { product: enrichedProduct, success: true };
           } catch (error) {
-            console.error(`Preview: Failed to fetch detailed data for ${product.walmart_id}:`, error);
-            return {
-              product,
-              detailedProduct: null,
-              success: false
+            console.warn(`Preview: Failed to fetch detailed data for ${product.walmart_id}, using basic data:`, error.message);
+            return { 
+              product: { ...product, company_id: companyId }, 
+              success: false 
             };
           }
         });
         
         // Wait for batch to complete
         const batchResults = await Promise.all(batchPromises);
-        detailedProductsResults.push(...batchResults);
         
-        // Add delay between batches to be safe
-        if (i + batchSize < newProductsToFetch.length) {
-          console.log(`Preview: Waiting 1 second before next batch...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-      
-      // Process results
-      for (const result of detailedProductsResults) {
-        if (result.success && result.detailedProduct) {
-          const enrichedProduct = {
-            ...result.product,
-            ...this.enrichProductWithDetails(result.product, result.detailedProduct),
-            company_id: companyId,
-          };
-          newProductsToInsert.push(enrichedProduct);
-        } else {
-          // Fallback to basic product data if detailed fetch fails
-          newProductsToInsert.push({
-            ...result.product,
-            company_id: companyId,
-          });
+        // Add results to insert list
+        for (const result of batchResults) {
+          newProductsToInsert.push(result.product);
         }
       }
     }
@@ -270,7 +227,7 @@ export class WalmartService {
       }
     }
 
-    // Batch insert new products if any
+    // Batch upsert new products if any
     if (newProductsToInsert.length > 0) {
       // Filter out products with null walmart_id to avoid constraint violations
       const validProductsToInsert = newProductsToInsert.filter(product => 
@@ -278,9 +235,10 @@ export class WalmartService {
       );
       
       if (validProductsToInsert.length > 0) {
-        const newProducts = await this.supabaseService.insert<WalmartProduct>(
+        const newProducts = await this.supabaseService.upsertMany<WalmartProduct>(
           TableName.WALMART_PRODUCTS,
-          validProductsToInsert
+          validProductsToInsert,
+          'walmart_id,company_id'
         );
         savedProducts.push(...newProducts);
       }
@@ -301,36 +259,31 @@ export class WalmartService {
   }
 
   private queryProductsFromApi(searchTerm: string) {
-    // Pass the path with query parameters, ScraperHttpClient will handle premium=true automatically
-    return this.scraperHttpClient.get<WalmartResponse>(`/structured/walmart/search?query=${encodeURIComponent(searchTerm)}&page=1`);
+    return this.scraperHttpClient.get<WalmartResponse>(
+      `/structured/walmart/search?query=${encodeURIComponent(searchTerm)}&page=1`,
+      { params: { ultra_premium: 'true' } }
+    );
   }
 
   private queryProductDetailFromApi(productId: string) {
-    // Pass the path with query parameters, ScraperHttpClient will handle premium=true automatically
-    return this.scraperHttpClient.get<WalmartProductDetail>(`/structured/walmart/product?product_id=${productId}`);
+    return this.scraperHttpClient.get<WalmartProductDetail>(
+      `/structured/walmart/product?product_id=${productId}`,
+      { params: { ultra_premium: 'true' } }
+    );
   }
 
   private enrichProductWithDetails(basicProduct: WalmartProduct, detailedProduct: any) {
-    // Extract additional fields from detailed product response
+    // Extract only the essential fields from detailed product response
     const enriched = {
       // Handle images field - convert string to array if needed
       images: this.formatImagesField(detailedProduct.images),
-      product_category: detailedProduct.product_category || null,
       product_short_description: detailedProduct.product_short_description || null,
-      product_availability: detailedProduct.product_availability || null,
-      sold_by: detailedProduct.sold_by || null,
-      sku: detailedProduct.sku || null,
-      gtin: detailedProduct.gtin || null,
-      brand: detailedProduct.brand || null,
-      bullet_points: detailedProduct.bullet_points || null,
-      // Add any other fields you want to capture
     };
     
     // Log what we're capturing for debugging
     console.log(`Enriching product ${detailedProduct.sku || detailedProduct.id}:`);
     console.log(`  - Images: ${enriched.images ? enriched.images.length : 0} found`);
     console.log(`  - Description: ${enriched.product_short_description ? 'Yes' : 'No'}`);
-    console.log(`  - Category: ${enriched.product_category || 'None'}`);
     
     return enriched;
   }
@@ -368,6 +321,7 @@ export class WalmartService {
     
     return limitedImages;
   }
+
 
   private async saveProductsInCompetitorTable(
     testId: string,

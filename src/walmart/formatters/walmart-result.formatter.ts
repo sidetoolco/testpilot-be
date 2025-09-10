@@ -16,13 +16,13 @@ export const formatWalmartResult = (items: WalmartItem[], searchTerm: string) =>
       };
     });
 
-  // Remove records with duplicate titles
-  const seenTitles = new Set();
+  // Remove records with duplicate walmart_ids
+  const seenWalmartIds = new Set();
   const uniqueResults = formattedResults.filter((record) => {
-    if (seenTitles.has(record.title)) {
+    if (seenWalmartIds.has(record.walmart_id)) {
       return false;
     }
-    seenTitles.add(record.title);
+    seenWalmartIds.add(record.walmart_id);
     return true;
   });
 
