@@ -146,6 +146,22 @@ export class TestsService {
     });
   }
 
+  /**
+   * Determine session type based on test name and session data
+   */
+  private getSessionType(session: any, testName: string): string {
+    if (testName === 'walmart' || testName?.includes('walmart')) {
+      return 'Walmart Session';
+    } else if (testName === 'amazon' || testName?.includes('amazon')) {
+      return 'Amazon Session';
+    } else if (session.walmart_product_id) {
+      return 'Walmart Session';
+    } else if (session.competitor_id) {
+      return 'Amazon Session';
+    }
+    return 'Unknown Session Type';
+  }
+
   public async getTestIdByProlificStudyId(prolificStudyId: string) {
     try {
       const { test_id } =
@@ -525,6 +541,30 @@ export class TestsService {
         status: session.status || 'completed',
         ended_at: session.ended_at || new Date().toISOString(),
       };
+
+      // Fix: Auto-detect Walmart tests and set walmart_product_id for proper session type
+      try {
+        const test = await this.supabaseService.getByCondition({
+          tableName: TableName.TESTS,
+          selectQuery: 'name',
+          condition: 'id',
+          value: session.test_id,
+          single: true,
+        });
+
+        const testName = (test as any)?.name;
+        const isWalmartTest = testName === 'walmart' || testName?.includes('walmart');
+        
+        if (isWalmartTest && !sessionData.walmart_product_id && sessionData.product_id) {
+          // For Walmart tests, use the test product as the walmart_product_id
+          sessionData.walmart_product_id = sessionData.product_id;
+          this.logger.log(`Auto-set walmart_product_id for Walmart test: ${sessionData.walmart_product_id}`);
+        }
+        
+        this.logger.log(`Session type detection - Test: ${testName}, IsWalmart: ${isWalmartTest}, WalmartProductId: ${sessionData.walmart_product_id}`);
+      } catch (error) {
+        this.logger.warn('Could not determine test type for session fix:', error);
+      }
 
       let sessionId;
       try {
