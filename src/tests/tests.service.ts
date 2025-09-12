@@ -367,7 +367,16 @@ export class TestsService {
       status: data.status,
       searchTerm: data.search_term,
       block: data.block,
-      competitors: data.competitors?.map((c) => c.product) || [],
+      competitors: data.competitors?.map((c) => {
+        // Return the correct product based on product_type
+        if (c.product_type === 'walmart_product' && c.walmart_product) {
+          return c.walmart_product;
+        } else if (c.product_type === 'amazon_product' && c.product) {
+          return c.product;
+        }
+        // Fallback to product if available
+        return c.product || c.walmart_product;
+      }) || [],
       variations: {
         a: this.getVariationWithProduct(data.variations, 'a'),
         b: this.getVariationWithProduct(data.variations, 'b'),
@@ -494,6 +503,140 @@ export class TestsService {
       return totalCost;
     } catch (error) {
       this.logger.error('Failed to get total study costs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Submit test responses and timing data
+   */
+  public async submitTestResponse(responseData: any) {
+    try {
+      const { session, timing_data, responses } = responseData;
+
+      // 1. Create or update testers session
+      const sessionData = {
+        test_id: session.test_id,
+        prolific_pid: session.prolific_pid,
+        variation_type: session.variation_type,
+        product_id: session.product_id || null,
+        competitor_id: session.competitor_id || null,
+        walmart_product_id: session.walmart_product_id || null,
+        status: session.status || 'completed',
+        ended_at: session.ended_at || new Date().toISOString(),
+      };
+
+      let sessionId;
+      try {
+        // Try to find existing session
+        const existingSession = await this.supabaseService.findMany(
+          TableName.TESTERS_SESSION,
+          {
+            test_id: session.test_id,
+            prolific_pid: session.prolific_pid,
+          }
+        );
+
+        if (existingSession && existingSession.length > 0) {
+          // Update existing session
+          sessionId = (existingSession[0] as any).id;
+          await this.supabaseService.update(
+            TableName.TESTERS_SESSION,
+            sessionData,
+            [{ key: 'test_id', value: session.test_id }]
+          );
+        } else {
+          // Create new session
+          const newSession = await this.supabaseService.insert(
+            TableName.TESTERS_SESSION,
+            sessionData
+          );
+          sessionId = (newSession as any)[0]?.id || (newSession as any).id;
+        }
+      } catch (error) {
+        this.logger.error('Error creating/updating testers session:', error);
+        throw error;
+      }
+
+      // 2. Insert timing data
+      if (timing_data && timing_data.length > 0) {
+        const timingRecords = timing_data.map((time: any) => ({
+          testers_session: sessionId,
+          product_id: time.product_id || null,
+          competitor_id: time.competitor_id || null,
+          walmart_product_id: time.walmart_product_id || session.walmart_product_id || null,
+          time_spent: time.time_spent,
+          click: time.click || 0,
+        }));
+
+        // Log timing data for debugging
+        this.logger.log('Timing data to be inserted:', {
+          count: timingRecords.length,
+          sample: timingRecords[0],
+          hasCompetitorIds: timingRecords.some(r => r.competitor_id),
+          hasProductIds: timingRecords.some(r => r.product_id),
+          hasWalmartProductIds: timingRecords.some(r => r.walmart_product_id),
+        });
+
+        try {
+          await this.supabaseService.insert(TableName.TEST_TIMES, timingRecords);
+          this.logger.log(`Successfully inserted ${timingRecords.length} timing records`);
+        } catch (error) {
+          this.logger.error('Error inserting timing data:', error);
+          throw error;
+        }
+      }
+
+      // 3. Insert response data
+      if (responses && responses.length > 0) {
+        const responseRecords = responses.map((response: any) => ({
+          test_id: response.test_id,
+          tester_id: sessionId,
+          product_id: response.product_id,
+          competitor_id: response.competitor_id,
+          value: response.value,
+          appearance: response.appearance,
+          confidence: response.confidence,
+          brand: response.brand,
+          convenience: response.convenience,
+          likes_most: response.likes_most,
+          improve_suggestions: response.improve_suggestions,
+          choose_reason: response.choose_reason,
+          appetizing: response.appetizing || null,
+          target_audience: response.target_audience || null,
+          novelty: response.novelty || null,
+        }));
+
+        try {
+          // Determine which table to use based on test type
+          const test = await this.supabaseService.getByCondition({
+            tableName: TableName.TESTS,
+            selectQuery: 'name',
+            condition: 'id',
+            value: session.test_id,
+            single: true,
+          });
+
+          const testName = (test as any)?.name;
+          const isWalmartTest = testName === 'walmart' || session.walmart_product_id;
+          const tableName = isWalmartTest ? TableName.RESPONSES_COMPARISONS_WALMART : TableName.RESPONSES_COMPARISONS;
+          
+          await this.supabaseService.insert(tableName, responseRecords);
+          this.logger.log(`Inserted ${responseRecords.length} response records into ${tableName} for ${testName || 'unknown'} test`);
+        } catch (error) {
+          this.logger.error('Error inserting response data:', error);
+          throw error;
+        }
+      }
+
+      return {
+        success: true,
+        session_id: sessionId,
+        timing_count: timing_data?.length || 0,
+        response_count: responses?.length || 0,
+      };
+    } catch (error) {
+      this.logger.error('Error submitting test response:', error);
       throw error;
     }
   }

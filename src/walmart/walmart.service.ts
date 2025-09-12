@@ -333,11 +333,11 @@ export class WalmartService {
       const dto = competitors.map((competitor) => ({
         test_id: testId,
         product_id: competitor.id, // Use the database UUID from the saved product
-        product_type: 'walmart_product' // Add this line!
+        product_type: 'walmart_product', // Set correct product type for Walmart
       }));
 
       const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, dto);
-      console.log(`Successfully inserted ${result.length} competitors to test_competitors table`);
+      console.log(`Successfully inserted ${result.length} competitors to test_competitors table with product_type: walmart_product`);
       
       return result;
     } catch (error) {

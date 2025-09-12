@@ -10,7 +10,14 @@ export interface RawTestData {
   updated_at: string;
   block: boolean;
   competitors: Array<{
-    product: {
+    product_type: 'amazon_product' | 'walmart_product';
+    product?: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    walmart_product?: {
       id: string;
       title: string;
       image_url: string;
