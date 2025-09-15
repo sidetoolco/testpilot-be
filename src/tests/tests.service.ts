@@ -62,7 +62,10 @@ export class TestsService {
 
     if (!unformattedTestData) throw new NotFoundException('Test not found');
 
-    return this.transformTestData(unformattedTestData);
+    // Fetch product details for competitors separately
+    const enrichedTestData = await this.enrichCompetitorsWithProductDetails(unformattedTestData);
+
+    return this.transformTestData(enrichedTestData);
   }
 
   public getTestDemographics(testId: string) {
@@ -84,10 +87,82 @@ export class TestsService {
     });
   }
 
-  public getCompetitorInsights(testId: string): Promise<CompetitiveInsights> {
-    return this.supabaseService.rpc(Rpc.GET_COMPETITOR_INSIGHTS, {
-      p_test_id: testId,
-    });
+  public async getCompetitorInsights(testId: string): Promise<CompetitiveInsights> {
+    // Check if this is a Walmart test by looking at test_competitors
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    if (isWalmartTest) {
+      // For Walmart tests, fetch from competitive_insights_walmart
+      const walmartInsights = await this.supabaseService.findMany(
+        TableName.COMPETITIVE_INSIGHTS_WALMART,
+        { test_id: testId },
+        '*'
+      );
+
+      // Transform the data to match the expected format
+      const transformedData = await this.transformCompetitiveInsightsData(walmartInsights, 'walmart');
+      
+      return transformedData;
+    } else {
+      // For Amazon tests, use the original RPC function
+      return await this.supabaseService.rpc(Rpc.GET_COMPETITOR_INSIGHTS, {
+        p_test_id: testId,
+      });
+    }
+  }
+
+  private async transformCompetitiveInsightsData(insights: any[], productType: 'amazon' | 'walmart'): Promise<CompetitiveInsights> {
+    const result: CompetitiveInsights = {};
+
+    // Group insights by competitor_product_id
+    const groupedInsights = insights.reduce((acc, insight) => {
+      const productId = insight.competitor_product_id;
+      if (!acc[productId]) {
+        acc[productId] = [];
+      }
+      acc[productId].push(insight);
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    // Transform each group
+    for (const [productId, productInsights] of Object.entries(groupedInsights)) {
+      // Get product details
+      const productTable = productType === 'walmart' ? TableName.WALMART_PRODUCTS : TableName.AMAZON_PRODUCTS;
+      const product = await this.supabaseService.getById({
+        tableName: productTable,
+        id: productId,
+        selectQuery: 'title, price'
+      });
+
+      if (product) {
+        // Group by variant type
+        const variants: Record<string, any> = {};
+        (productInsights as any[]).forEach(insight => {
+          variants[insight.variant_type] = {
+            share_of_buy: insight.share_of_buy,
+            value: insight.value,
+            aesthetics: insight.aesthetics,
+            utility: insight.utility,
+            trust: insight.trust,
+            convenience: insight.convenience
+          };
+        });
+
+        result[productId] = {
+          title: (product as any).title,
+          price: (product as any).price,
+          variants
+        };
+      }
+    }
+
+    return result;
   }
 
   public async updateTestVariationStatus(
@@ -364,6 +439,53 @@ export class TestsService {
     }
   }
 
+  private async enrichCompetitorsWithProductDetails(data: RawTestData): Promise<RawTestData> {
+    if (!data.competitors || data.competitors.length === 0) {
+      return data;
+    }
+
+    const enrichedCompetitors = await Promise.all(
+      data.competitors.map(async (competitor) => {
+        const enriched = { ...competitor };
+
+        if (competitor.product_type === 'amazon_product' && competitor.product_id) {
+          try {
+            const amazonProduct = await this.supabaseService.getById({
+              tableName: TableName.AMAZON_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price',
+            });
+            if (amazonProduct) {
+              enriched.amazon_product = amazonProduct as any;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch Amazon product ${competitor.product_id}:`, error);
+          }
+        } else if (competitor.product_type === 'walmart_product' && competitor.product_id) {
+          try {
+            const walmartProduct = await this.supabaseService.getById({
+              tableName: TableName.WALMART_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price',
+            });
+            if (walmartProduct) {
+              enriched.walmart_product = walmartProduct as any;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch Walmart product ${competitor.product_id}:`, error);
+          }
+        }
+
+        return enriched;
+      })
+    );
+
+    return {
+      ...data,
+      competitors: enrichedCompetitors,
+    };
+  }
+
   private transformTestData(data: RawTestData): TestData {
     const surveysByType = this.groupResponsesByType(
       data.responses_surveys || [],
@@ -383,15 +505,15 @@ export class TestsService {
       status: data.status,
       searchTerm: data.search_term,
       block: data.block,
-      competitors: data.competitors?.map((c) => {
+      competitors: data.competitors?.map((c: any) => {
         // Return the correct product based on product_type
         if (c.product_type === 'walmart_product' && c.walmart_product) {
           return c.walmart_product;
-        } else if (c.product_type === 'amazon_product' && c.product) {
-          return c.product;
+        } else if (c.product_type === 'amazon_product' && c.amazon_product) {
+          return c.amazon_product;
         }
-        // Fallback to product if available
-        return c.product || c.walmart_product;
+        // Fallback to available product
+        return c.amazon_product || c.walmart_product;
       }) || [],
       variations: {
         a: this.getVariationWithProduct(data.variations, 'a'),

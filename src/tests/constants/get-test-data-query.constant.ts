@@ -6,10 +6,10 @@ export const GET_TEST_DATA_QUERY = `
           created_at,
           updated_at,
           block,
+          objective,
           competitors:test_competitors(
             product_type,
-            product:amazon_products(id, title, image_url, price),
-            walmart_product:walmart_products(id, title, image_url, price)
+            product_id
           ),
           variations:test_variations(
             product:products(id, title, image_url, price),

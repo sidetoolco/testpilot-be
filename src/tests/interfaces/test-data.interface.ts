@@ -11,7 +11,8 @@ export interface RawTestData {
   block: boolean;
   competitors: Array<{
     product_type: 'amazon_product' | 'walmart_product';
-    product?: {
+    product_id?: string;
+    amazon_product?: {
       id: string;
       title: string;
       image_url: string;

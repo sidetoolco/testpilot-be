@@ -151,7 +151,16 @@ export class WalmartService {
       const competitorResult = await this.saveProductsInCompetitorTable(testId, savedProducts);
       console.log(`Successfully saved ${savedProducts.length} products to test_competitors table`);
       
-      return competitorResult;
+      // For Walmart tests, we only create competitors, not test variations
+      // Test variations should be created separately for your own products
+      console.log(`Walmart test: Created ${competitorResult.length} competitors. Test variations should be created separately for your own products.`);
+      
+      return {
+        competitors: competitorResult,
+        variations: [], // No variations created for competitor products
+        totalProducts: savedProducts.length,
+        message: "Walmart competitors saved. Create test variations separately for your own products."
+      };
     } catch (error) {
       console.error('Error in saveWalmartProducts:', error);
       throw error;
@@ -347,4 +356,5 @@ export class WalmartService {
       throw new Error(`Failed to save competitors to test_competitors table: ${error.message}`);
     }
   }
+
 }

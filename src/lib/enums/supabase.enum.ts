@@ -13,6 +13,7 @@ export enum TableName {
   TEST_SUMMARY = 'summary',
   PURCHASE_DRIVERS = 'purchase_drivers',
   COMPETITIVE_INSIGHTS = 'competitive_insights',
+  COMPETITIVE_INSIGHTS_WALMART = 'competitive_insights_walmart',
   TESTERS_SESSION = 'testers_session',
   AMAZON_PRODUCTS = 'amazon_products',
   WALMART_PRODUCTS = 'walmart_products',
