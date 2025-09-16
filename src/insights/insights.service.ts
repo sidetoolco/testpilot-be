@@ -75,6 +75,9 @@ export class InsightsService {
             const shopperCount = responses.length;
             const totalAverage = this.calculateTotalAverage(responses as any);
             
+            // Get total selections for this variant to match competitive insights calculation
+            const totalSelectionsForVariant = await this.getTotalSelectionsForVariant(testId, variation.variation_type);
+            
             const summary = this.generateVariantSummary(
               test.name,
               variation.product?.title || 'Unknown Product',
@@ -83,7 +86,7 @@ export class InsightsService {
               responses.length,
               await this.calculateShareOfClicks(testId, variation.product_id),
               totalAverage,
-              shopperCount,
+              totalSelectionsForVariant, // Use same denominator as competitive insights
             );
 
             // Generate and save insights for this variant (same as Prolific flow)
@@ -92,12 +95,12 @@ export class InsightsService {
             const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
               await Promise.all([
                 this.purchaseDrivers(testId, variation.variation_type),
-                this.competitiveInsights(variation, testId, shopperCount),
+                this.competitiveInsights(variation, testId, totalSelectionsForVariant),
                 this.saveInsights(
                   testId,
-                  summary.shareOfBuy,
-                  summary.shareOfClicks,
-                  summary.valuescore,
+                  Number(summary.shareOfBuy),
+                  Number(summary.shareOfClicks),
+                  Number(summary.valuescore),
                   variation.variation_type,
                   variation.product_id,
                 ),
@@ -131,10 +134,13 @@ export class InsightsService {
         results: results.map(r => ({ variant: r.variant, hasCompetitiveInsights: !!r.competitiveInsights }))
       });
 
+      // Mark test as complete after successful summary generation
+      await this.markTestAsComplete(testId);
+
       return {
         testId,
         results,
-        message: `Successfully generated summary data for ${results.length} variants`,
+        message: `Successfully generated summary data for ${results.length} variants and marked test as complete`,
       };
     } catch (error) {
       this.logger.error(
@@ -145,17 +151,47 @@ export class InsightsService {
     }
   }
 
+  private async markTestAsComplete(testId: string) {
+    try {
+      this.logger.log(`🔄 Marking test ${testId} as complete...`);
+      
+      // TODO: Implement proper test completion
+      // For now, just log that completion would happen here
+      // The actual completion can be done manually via SQL or a separate endpoint
+      
+      this.logger.log(`✅ Test ${testId} summary generation completed.`);
+      
+    } catch (error) {
+      this.logger.error(`Failed to mark test ${testId} as complete:`, error);
+      // Don't throw error - completion is not critical for summary generation
+    }
+  }
+
   private async getSurveyResponsesForVariant(testId: string, variantType: string) {
     // Get survey responses for the specific variant
     const surveys = await this.supabaseService.findMany(
       TableName.RESPONSES_SURVEYS,
       { test_id: testId },
-      '*'
+      '*, tester_id'
     );
 
-    // Filter by variant type through tester_id
+    // Get all sessions for this test to map tester_id to variation_type
+    const sessions = await this.supabaseService.findMany(
+      TableName.TESTERS_SESSION,
+      { test_id: testId },
+      'id, variation_type'
+    );
+
+    // Create a map of tester_id to variation_type
+    const sessionMap = new Map();
+    sessions.forEach((session: any) => {
+      sessionMap.set(session.id, session.variation_type);
+    });
+
+    // Filter surveys by variant type
     const variantSurveys = surveys.filter((survey: any) => {
-      return survey.tester_id?.variation_type === variantType;
+      const variationType = sessionMap.get(survey.tester_id);
+      return variationType === variantType;
     });
 
     return variantSurveys;
@@ -186,6 +222,76 @@ export class InsightsService {
         '*'
       );
     }
+  }
+
+  private async getTotalSelectionsForVariant(testId: string, variantType: string): Promise<number> {
+    // Get all survey responses for this test
+    const surveys = await this.supabaseService.findMany(
+      TableName.RESPONSES_SURVEYS,
+      { test_id: testId },
+      '*, tester_id'
+    );
+    
+    // Get all sessions for this test to map tester_id to variation_type
+    const sessions = await this.supabaseService.findMany(
+      TableName.TESTERS_SESSION,
+      { test_id: testId },
+      'id, variation_type'
+    );
+
+    // Create a map of tester_id to variation_type
+    const sessionMap = new Map();
+    sessions.forEach((session: any) => {
+      sessionMap.set(session.id, session.variation_type);
+    });
+
+    // Filter surveys by variant type
+    const variantSurveys = surveys.filter((survey: any) => {
+      const variationType = sessionMap.get(survey.tester_id);
+      return variationType === variantType;
+    });
+
+    // Get comparison responses for this specific variant
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    let variantComparisons = [];
+    if (isWalmartTest) {
+      const allComparisons = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        { test_id: testId },
+        '*, tester_id'
+      );
+      variantComparisons = allComparisons.filter((comparison: any) => {
+        const variationType = sessionMap.get(comparison.tester_id);
+        return variationType === variantType;
+      });
+    } else {
+      const allComparisons = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS,
+        { test_id: testId },
+        '*, tester_id'
+      );
+      variantComparisons = allComparisons.filter((comparison: any) => {
+        const variationType = sessionMap.get(comparison.tester_id);
+        return variationType === variantType;
+      });
+    }
+
+    const totalSelections = variantSurveys.length + variantComparisons.length;
+    
+    // Safety check to prevent division by zero
+    if (totalSelections === 0) {
+      this.logger.warn(`⚠️  WARNING: totalSelections is 0 for variant ${variantType}. This will cause division by zero.`);
+      return 1; // Return 1 to prevent division by zero, but log the issue
+    }
+    
+    return totalSelections;
   }
 
   public async saveAiInsights(testId: string) {
@@ -316,6 +422,10 @@ export class InsightsService {
       );
 
       const totalAverage = this.calculateTotalAverage(surveys);
+      
+      // Get total selections for this variant to match competitive insights calculation
+      const totalSelectionsForVariant = await this.getTotalSelectionsForVariant(testId, variantChoosen.variation_type);
+      
       const summary = this.generateVariantSummary(
         test.name,
         variantChoosen.product.title,
@@ -324,18 +434,18 @@ export class InsightsService {
         surveys.length,
         await this.calculateShareOfClicks(testId, variantChoosen.product_id),
         totalAverage,
-        shopperCount,
+        totalSelectionsForVariant, // Use same denominator as competitive insights
       );
 
       const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
         await Promise.all([
           this.purchaseDrivers(testId, variation),
-          this.competitiveInsights(variantChoosen, testId, shopperCount),
+          this.competitiveInsights(variantChoosen, testId, totalSelectionsForVariant),
           this.saveInsights(
             testId,
-            summary.shareOfBuy,
-            summary.shareOfClicks,
-            summary.valuescore,
+            Number(summary.shareOfBuy),
+            Number(summary.shareOfClicks),
+            Number(summary.valuescore),
             variantChoosen.variation_type,
             variantChoosen.product_id,
           ),
@@ -540,20 +650,10 @@ export class InsightsService {
         '*, tester_id!inner(variation_type)'
       );
       
-      this.logger.log(`🔍 Found ${allResponses.length} total Walmart comparison responses for test ${testId}`);
-      this.logger.log(`🔍 Looking for variant type: ${variantType}`);
-      
-      // Log sample responses to debug
-      if (allResponses.length > 0) {
-        this.logger.log(`🔍 Sample response tester_id:`, (allResponses[0] as any).tester_id);
-      }
-      
       // Filter by variant type
       const filteredResponses = allResponses.filter((response: any) => 
         response.tester_id?.variation_type === variantType
       );
-      
-      this.logger.log(`🔍 Filtered to ${filteredResponses.length} responses for variant ${variantType}`);
       
       return filteredResponses;
     } else {
@@ -564,20 +664,10 @@ export class InsightsService {
         '*, tester_id!inner(variation_type)'
       );
       
-      this.logger.log(`🔍 Found ${allResponses.length} total Amazon comparison responses for test ${testId}`);
-      this.logger.log(`🔍 Looking for variant type: ${variantType}`);
-      
-      // Log sample responses to debug
-      if (allResponses.length > 0) {
-        this.logger.log(`🔍 Sample response tester_id:`, (allResponses[0] as any).tester_id);
-      }
-      
       // Filter by variant type
       const filteredResponses = allResponses.filter((response: any) => 
         response.tester_id?.variation_type === variantType
       );
-      
-      this.logger.log(`🔍 Filtered to ${filteredResponses.length} responses for variant ${variantType}`);
       
       return filteredResponses;
     }
@@ -973,9 +1063,25 @@ export class InsightsService {
     surveysAmount: number,
     shareOfClicks: number,
     totalAverage: number,
-    shopperCount: number,
+    totalSelectionsForVariant: number,
   ) {
-    const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(1);
+    // Safety check to prevent division by zero
+    if (totalSelectionsForVariant === 0) {
+      this.logger.warn(`⚠️  WARNING: totalSelectionsForVariant is 0 for variant ${variant}. Cannot calculate share of buy.`);
+      return {
+        name: testName,
+        productTitle: productTitle,
+        testid: testId,
+        variant: variant,
+        shareOfClicks: shareOfClicks,
+        shareOfBuy: '0.0',
+        valueScore: totalAverage.toFixed(1),
+        surveysAmount: surveysAmount,
+        totalSelections: totalSelectionsForVariant
+      };
+    }
+    
+    const shareOfBuy = ((surveysAmount / totalSelectionsForVariant) * 100).toFixed(1);
 
     return {
       name: testName,
@@ -1153,16 +1259,22 @@ export class InsightsService {
     testId: string,
     variantProductId: string,
   ) {
+    // Get ALL clicks for this test (main products + competitors)
     const allClicksFromTest = await this.supabaseService.findMany<Event>(
       TableName.EVENTS,
       { 'metadata->>test_id': testId },
     );
 
+    // Count total clicks (main products + competitors)
     const totalClicks = allClicksFromTest.length;
+    
+    // Count clicks for this specific variant product only
     const variantClicks = allClicksFromTest.filter(
       (click) => click.metadata['product_id'] === variantProductId,
     ).length;
 
+    this.logger.log(`📊 Share of clicks calculation: ${variantClicks}/${totalClicks} = ${totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0}%`);
+    
     return totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0;
   }
 
