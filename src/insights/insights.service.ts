@@ -134,13 +134,11 @@ export class InsightsService {
         results: results.map(r => ({ variant: r.variant, hasCompetitiveInsights: !!r.competitiveInsights }))
       });
 
-      // Mark test as complete after successful summary generation
-      await this.markTestAsComplete(testId);
 
       return {
         testId,
         results,
-        message: `Successfully generated summary data for ${results.length} variants and marked test as complete`,
+        message: `Successfully generated summary data for ${results.length} variants`,
       };
     } catch (error) {
       this.logger.error(
@@ -151,21 +149,6 @@ export class InsightsService {
     }
   }
 
-  private async markTestAsComplete(testId: string) {
-    try {
-      this.logger.log(`🔄 Marking test ${testId} as complete...`);
-      
-      // TODO: Implement proper test completion
-      // For now, just log that completion would happen here
-      // The actual completion can be done manually via SQL or a separate endpoint
-      
-      this.logger.log(`✅ Test ${testId} summary generation completed.`);
-      
-    } catch (error) {
-      this.logger.error(`Failed to mark test ${testId} as complete:`, error);
-      // Don't throw error - completion is not critical for summary generation
-    }
-  }
 
   private async getSurveyResponsesForVariant(testId: string, variantType: string) {
     // Get survey responses for the specific variant
