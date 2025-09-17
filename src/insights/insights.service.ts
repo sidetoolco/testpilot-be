@@ -728,8 +728,6 @@ export class InsightsService {
 
       const count = metrics.count;
 
-      // FIX: Calculate share of buy based on total selections for this variant, not total shopper count
-      // This ensures that share of buy percentages sum to ~100% per variant
       const shareOfBuy = totalSelectionsForVariant > 0 
         ? ((count / totalSelectionsForVariant) * 100).toFixed(2)
         : '0.00';
