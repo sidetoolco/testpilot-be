@@ -113,6 +113,7 @@ export class AmazonService {
     const dto = competitors.map((competitor) => ({
       test_id: testId,
       product_id: competitor.id,
+      product_type: 'amazon_product', // Set correct product type for Amazon
     }));
 
     return await this.supabaseService.insert(TableName.TEST_COMPETITORS, dto);

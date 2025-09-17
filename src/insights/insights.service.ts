@@ -47,6 +47,236 @@ export class InsightsService {
     private readonly adalineService: AdalineService,
   ) {}
 
+  public async generateSummaryForTest(testId: string) {
+    try {
+      this.logger.log(`🚀 Starting generateSummaryForTest for test ${testId}`);
+      const test = await this.testsService.getTestById(testId);
+      const testVariations = await this.testsService.getTestVariations(testId);
+
+      this.logger.log(`📊 Found ${testVariations.length} test variations:`, testVariations.map(v => ({ id: v.id, variation_type: v.variation_type, product_id: v.product_id })));
+
+      const results = [];
+
+      for (const variation of testVariations) {
+        try {
+          this.logger.log(`Generating summary for variant ${variation.variation_type}`);
+          
+          // Get survey responses for this variant
+          const surveys = await this.getSurveyResponsesForVariant(testId, variation.variation_type);
+          
+          // For Walmart tests, also try to get comparison responses if no survey responses
+          let responses = surveys;
+          if (responses.length === 0) {
+            this.logger.log(`No survey responses found for variant ${variation.variation_type}, trying comparison responses`);
+            responses = await this.getComparisonResponses(testId, variation.product_id);
+          }
+          
+          if (responses.length > 0) {
+            const shopperCount = responses.length;
+            const totalAverage = this.calculateTotalAverage(responses as any);
+            
+            // Get total selections for this variant to match competitive insights calculation
+            const totalSelectionsForVariant = await this.getTotalSelectionsForVariant(testId, variation.variation_type);
+            
+            const summary = this.generateVariantSummary(
+              test.name,
+              variation.product?.title || 'Unknown Product',
+              testId,
+              variation.variation_type,
+              responses.length,
+              await this.calculateShareOfClicks(testId, variation.product_id),
+              totalAverage,
+              totalSelectionsForVariant, // Use same denominator as competitive insights
+            );
+
+            // Generate and save insights for this variant (same as Prolific flow)
+            this.logger.log(`🔄 Starting insights generation for variant ${variation.variation_type}`);
+            
+            const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
+              await Promise.all([
+                this.purchaseDrivers(testId, variation.variation_type),
+                this.competitiveInsights(variation, testId, totalSelectionsForVariant),
+                this.saveInsights(
+                  testId,
+                  Number(summary.shareOfBuy),
+                  Number(summary.shareOfClicks),
+                  Number(summary.valuescore),
+                  variation.variation_type,
+                  variation.product_id,
+                ),
+              ]);
+
+            this.logger.log(`✅ Successfully generated insights for variant ${variation.variation_type}:`, {
+              purchaseDrivers: variantPurchaseDrivers ? 'Generated' : 'Failed',
+              competitiveInsights: variantCompetitiveInsights ? `${variantCompetitiveInsights.length} items` : 'Failed',
+              summary: savedSummary ? 'Saved' : 'Failed'
+            });
+
+            await this.saveInsightStatus(testId, variation.variation_type);
+
+            results.push({
+              variant: variation.variation_type,
+              summary: savedSummary,
+              purchaseDrivers: variantPurchaseDrivers,
+              competitiveInsights: variantCompetitiveInsights,
+            });
+          }
+        } catch (error) {
+          this.logger.error(
+            `Failed to generate summary for variant ${variation.variation_type}:`,
+            error,
+          );
+        }
+      }
+
+      this.logger.log(`🎉 generateSummaryForTest completed for test ${testId}:`, {
+        totalResults: results.length,
+        results: results.map(r => ({ variant: r.variant, hasCompetitiveInsights: !!r.competitiveInsights }))
+      });
+
+
+      return {
+        testId,
+        results,
+        message: `Successfully generated summary data for ${results.length} variants`,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate summary for test ${testId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+
+  private async getSurveyResponsesForVariant(testId: string, variantType: string) {
+    // Get survey responses for the specific variant
+    const surveys = await this.supabaseService.findMany(
+      TableName.RESPONSES_SURVEYS,
+      { test_id: testId },
+      '*, tester_id'
+    );
+
+    // Get all sessions for this test to map tester_id to variation_type
+    const sessions = await this.supabaseService.findMany(
+      TableName.TESTERS_SESSION,
+      { test_id: testId },
+      'id, variation_type'
+    );
+
+    // Create a map of tester_id to variation_type
+    const sessionMap = new Map();
+    sessions.forEach((session: any) => {
+      sessionMap.set(session.id, session.variation_type);
+    });
+
+    // Filter surveys by variant type
+    const variantSurveys = surveys.filter((survey: any) => {
+      const variationType = sessionMap.get(survey.tester_id);
+      return variationType === variantType;
+    });
+
+    return variantSurveys;
+  }
+
+  private async getComparisonResponses(testId: string, productId: string) {
+    // Check if this is a Walmart test by looking at test_competitors
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    if (isWalmartTest) {
+      // For Walmart tests, use responses_comparisons_walmart
+      return await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        { test_id: testId, product_id: productId },
+        '*'
+      );
+    } else {
+      // For Amazon tests, use responses_comparisons
+      return await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS,
+        { test_id: testId, product_id: productId },
+        '*'
+      );
+    }
+  }
+
+  private async getTotalSelectionsForVariant(testId: string, variantType: string): Promise<number> {
+    // Get all survey responses for this test
+    const surveys = await this.supabaseService.findMany(
+      TableName.RESPONSES_SURVEYS,
+      { test_id: testId },
+      '*, tester_id'
+    );
+    
+    // Get all sessions for this test to map tester_id to variation_type
+    const sessions = await this.supabaseService.findMany(
+      TableName.TESTERS_SESSION,
+      { test_id: testId },
+      'id, variation_type'
+    );
+
+    // Create a map of tester_id to variation_type
+    const sessionMap = new Map();
+    sessions.forEach((session: any) => {
+      sessionMap.set(session.id, session.variation_type);
+    });
+
+    // Filter surveys by variant type
+    const variantSurveys = surveys.filter((survey: any) => {
+      const variationType = sessionMap.get(survey.tester_id);
+      return variationType === variantType;
+    });
+
+    // Get comparison responses for this specific variant
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    let variantComparisons = [];
+    if (isWalmartTest) {
+      const allComparisons = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        { test_id: testId },
+        '*, tester_id'
+      );
+      variantComparisons = allComparisons.filter((comparison: any) => {
+        const variationType = sessionMap.get(comparison.tester_id);
+        return variationType === variantType;
+      });
+    } else {
+      const allComparisons = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS,
+        { test_id: testId },
+        '*, tester_id'
+      );
+      variantComparisons = allComparisons.filter((comparison: any) => {
+        const variationType = sessionMap.get(comparison.tester_id);
+        return variationType === variantType;
+      });
+    }
+
+    const totalSelections = variantSurveys.length + variantComparisons.length;
+    
+    // Safety check to prevent division by zero
+    if (totalSelections === 0) {
+      this.logger.warn(`⚠️  WARNING: totalSelections is 0 for variant ${variantType}. This will cause division by zero.`);
+      return 1; // Return 1 to prevent division by zero, but log the issue
+    }
+    
+    return totalSelections;
+  }
+
   public async saveAiInsights(testId: string) {
     try {
       this.logger.log(`Generating AI insights for test ${testId}`);
@@ -175,6 +405,10 @@ export class InsightsService {
       );
 
       const totalAverage = this.calculateTotalAverage(surveys);
+      
+      // Get total selections for this variant to match competitive insights calculation
+      const totalSelectionsForVariant = await this.getTotalSelectionsForVariant(testId, variantChoosen.variation_type);
+      
       const summary = this.generateVariantSummary(
         test.name,
         variantChoosen.product.title,
@@ -183,18 +417,18 @@ export class InsightsService {
         surveys.length,
         await this.calculateShareOfClicks(testId, variantChoosen.product_id),
         totalAverage,
-        shopperCount,
+        totalSelectionsForVariant, // Use same denominator as competitive insights
       );
 
       const [variantPurchaseDrivers, variantCompetitiveInsights, savedSummary] =
         await Promise.all([
           this.purchaseDrivers(testId, variation),
-          this.competitiveInsights(variantChoosen, testId, shopperCount),
+          this.competitiveInsights(variantChoosen, testId, totalSelectionsForVariant),
           this.saveInsights(
             testId,
-            summary.shareOfBuy,
-            summary.shareOfClicks,
-            summary.valuescore,
+            Number(summary.shareOfBuy),
+            Number(summary.shareOfClicks),
+            Number(summary.valuescore),
             variantChoosen.variation_type,
             variantChoosen.product_id,
           ),
@@ -231,49 +465,27 @@ export class InsightsService {
     shopperCount: number,
   ) {
     try {
+      this.logger.log(`Starting competitive insights generation for test ${testId}, variant ${variation.variation_type}`);
+      
       const [testCompetitors, competitorsComparison] = await Promise.all([
-        this.supabaseService.findMany(
-          TableName.TEST_COMPETITORS,
-          {
-            test_id: testId,
-          },
-        ),
-        this.supabaseService.findMany(TableName.RESPONSES_COMPARISONS, {
-          test_id: testId,
-          product_id: variation.product_id,
-        }),
+        this.getTestCompetitors(testId),
+        this.getComparisonResponsesForVariant(testId, variation.variation_type),
       ]);
+
+      this.logger.log(`Found ${testCompetitors?.length || 0} competitors and ${competitorsComparison?.length || 0} comparison responses`);
 
       if (!testCompetitors?.length) {
         throw new NotFoundException('Test competitors not found');
       }
 
-      // Dynamically fetch product details based on product_type
-      const competitorsWithProducts = await Promise.all(
-        testCompetitors.map(async (competitor: any) => {
-          let productTable: TableName = TableName.AMAZON_PRODUCTS; // default
-          
-          if (competitor.product_type === 'walmart_product') {
-            productTable = TableName.WALMART_PRODUCTS;
-          } else if (competitor.product_type === 'user_product') {
-            productTable = TableName.PRODUCTS;
-          }
-          
-          // Fetch product details from the appropriate table
-          const productDetails = await this.supabaseService.findOne(
-            productTable,
-            { id: competitor.product_id },
-            'title, image_url, price, rating, reviews_count'
-          );
-          
-          return {
-            ...competitor,
-            product: productDetails
-          };
-        })
-      );
+      if (!competitorsComparison?.length) {
+        this.logger.warn('No comparison responses found for competitive insights');
+        return [];
+      }
 
       const groupedData = this.groupCompetitorMetrics(competitorsComparison);
+      this.logger.log(`Grouped data keys: ${Object.keys(groupedData).join(', ')}`);
+      
       const results = this.calculateCompetitorResults(
         competitorsWithProducts,
         groupedData,
@@ -282,22 +494,165 @@ export class InsightsService {
         shopperCount,
       );
 
+      this.logger.log(`Generated ${results.length} competitive insight results`);
+
+      // Determine which table to use based on test type
+      const isWalmartTest = testCompetitors.some((c: any) => c.product_type === 'walmart_product');
+      const tableName = isWalmartTest ? TableName.COMPETITIVE_INSIGHTS_WALMART : TableName.COMPETITIVE_INSIGHTS;
+      
+      this.logger.log(`Using table ${tableName} for competitive insights`);
+      this.logger.log(`Test competitors: ${JSON.stringify(testCompetitors.map(c => ({ id: c.id, product_id: c.product_id, product_type: c.product_type })))}`);
+      this.logger.log(`Results to save: ${JSON.stringify(results.map(r => ({ competitor_product_id: r.competitor_product_id, variant_type: r.variant_type })))}`);
+      
       // ['test_id', 'variant_type', 'competitor_product_id'] agrupar por test_id, variant_type, competitor_product_id
-      return await Promise.all(
-        results.map((result) =>
-          this.supabaseService.upsert(
-            TableName.COMPETITIVE_INSIGHTS,
-            result,
-            'competitor_product_id,test_id,variant_type',
-          ),
-        ),
+      this.logger.log(`Attempting to save ${results.length} results to ${tableName}`);
+      
+      const savedResults = await Promise.all(
+        results.map(async (result, index) => {
+          try {
+            this.logger.log(`Saving result ${index + 1}/${results.length}:`, result);
+            const saved = await this.supabaseService.upsert(
+              tableName,
+              result,
+              'competitor_product_id,test_id,variant_type',
+            );
+            this.logger.log(`Successfully saved result ${index + 1}`);
+            return saved;
+          } catch (error) {
+            this.logger.error(`Failed to save result ${index + 1}:`, error);
+            throw error;
+          }
+        }),
       );
+
+      this.logger.log(`Successfully saved ${savedResults.length} competitive insights`);
+      return savedResults;
     } catch (error) {
       this.logger.error(
         `Failed to generate competitive insights for test ${testId}:`,
         error,
       );
       throw error;
+    }
+  }
+
+  private async getTestCompetitors(testId: string) {
+    // Get test competitors with their product details
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'id, test_id, product_id, product_type'
+    );
+
+    if (!competitors?.length) {
+      return [];
+    }
+
+    // Enrich with product details based on product_type
+    const enrichedCompetitors = await Promise.all(
+      competitors.map(async (competitor: any) => {
+        const enriched = { ...competitor };
+
+        if (competitor.product_type === 'walmart_product' && competitor.product_id) {
+          try {
+            const walmartProduct = await this.supabaseService.getById({
+              tableName: TableName.WALMART_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price, rating, reviews_count',
+            });
+            if (walmartProduct) {
+              enriched.product = walmartProduct;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch Walmart product ${competitor.product_id}:`, error);
+          }
+        } else if (competitor.product_type === 'amazon_product' && competitor.product_id) {
+          try {
+            const amazonProduct = await this.supabaseService.getById({
+              tableName: TableName.AMAZON_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price, rating, reviews_count',
+            });
+            if (amazonProduct) {
+              enriched.product = amazonProduct;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch Amazon product ${competitor.product_id}:`, error);
+          }
+        }
+
+        return enriched;
+      })
+    );
+
+    return enrichedCompetitors;
+  }
+
+  private async getAllComparisonResponses(testId: string) {
+    // Check if this is a Walmart test by looking at test_competitors
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    if (isWalmartTest) {
+      // For Walmart tests, get ALL comparison responses for the test
+      return await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        { test_id: testId },
+        '*'
+      );
+    } else {
+      // For Amazon tests, get ALL comparison responses for the test
+      return await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS,
+        { test_id: testId },
+        '*'
+      );
+    }
+  }
+
+  private async getComparisonResponsesForVariant(testId: string, variantType: string) {
+    // Check if this is a Walmart test by looking at test_competitors
+    const competitors = await this.supabaseService.findMany(
+      TableName.TEST_COMPETITORS,
+      { test_id: testId },
+      'product_type'
+    );
+
+    const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+
+    if (isWalmartTest) {
+      // For Walmart tests, get comparison responses for the specific variant
+      const allResponses = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        { test_id: testId },
+        '*, tester_id!inner(variation_type)'
+      );
+      
+      // Filter by variant type
+      const filteredResponses = allResponses.filter((response: any) => 
+        response.tester_id?.variation_type === variantType
+      );
+      
+      return filteredResponses;
+    } else {
+      // For Amazon tests, get comparison responses for the specific variant
+      const allResponses = await this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS,
+        { test_id: testId },
+        '*, tester_id!inner(variation_type)'
+      );
+      
+      // Filter by variant type
+      const filteredResponses = allResponses.filter((response: any) => 
+        response.tester_id?.variation_type === variantType
+      );
+      
+      return filteredResponses;
     }
   }
 
@@ -344,33 +699,44 @@ export class InsightsService {
     testId: string,
     shopperCount: number,
   ) {
+    this.logger.log(`Calculating competitor results for ${competitors.length} competitors`);
+    this.logger.log(`Grouped data keys: ${Object.keys(groupedData).join(', ')}`);
+    
     // Calculate total selections for this specific variant
     const totalSelectionsForVariant = Object.values(groupedData).reduce(
       (total: number, metrics: any) => total + metrics.count,
       0
     );
+    
+    this.logger.log(`Total selections for variant: ${totalSelectionsForVariant}`);
 
     return competitors.map((competitor) => {
-      const metrics = groupedData[competitor.id] ||
-        groupedData[competitor.product_id] || {
-          count: 0,
-          shareofbuy: 0,
-          averageValue: 0,
-          averageAppearance: 0,
-          averageConfidence: 0,
-          averageBrand: 0,
-          averageConvenience: 0,
-        };
+      this.logger.log(`Processing competitor: ${competitor.product_id}`);
+      
+      // The groupedData is keyed by competitor_id from responses, which matches competitor.product_id
+      const metrics = groupedData[competitor.product_id] || {
+        count: 0,
+        shareofbuy: 0,
+        averageValue: 0,
+        averageAppearance: 0,
+        averageConfidence: 0,
+        averageBrand: 0,
+        averageConvenience: 0,
+      };
+      
+      this.logger.log(`Metrics for ${competitor.product_id}:`, metrics);
 
       const count = metrics.count;
 
-      // FIX: Calculate share of buy based on total selections for this variant, not total shopper count
-      // This ensures that share of buy percentages sum to ~100% per variant
       const shareOfBuy = totalSelectionsForVariant > 0 
         ? ((count / totalSelectionsForVariant) * 100).toFixed(2)
         : '0.00';
 
+      // Generate a unique ID for the insert
+      const id = Date.now() + Math.floor(Math.random() * 1000);
+      
       return {
+        id: id,
         variant_type: variation.variation_type,
         test_id: testId,
         competitor_product_id: competitor.product_id,
@@ -412,12 +778,18 @@ export class InsightsService {
       if (!test) throw new NotFoundException('Test not found');
       if (!variation) throw new NotFoundException('Variation not found');
 
-      const responses = await this.supabaseService.findMany<
+      // First try to get survey responses
+      let responses = await this.supabaseService.findMany<
         ResponseSurvey & { test_id: string; product_id: string }
       >(TableName.RESPONSES_SURVEYS, {
         test_id: testId,
         product_id: variation.product_id,
       });
+
+      // If no survey responses, try to get comparison responses (Walmart or Amazon)
+      if (!responses?.length) {
+        responses = await this.getComparisonResponses(testId, variation.product_id) as any;
+      }
 
       if (!responses?.length) throw new NotFoundException('No responses found');
 
@@ -672,9 +1044,25 @@ export class InsightsService {
     surveysAmount: number,
     shareOfClicks: number,
     totalAverage: number,
-    shopperCount: number,
+    totalSelectionsForVariant: number,
   ) {
-    const shareOfBuy = ((surveysAmount / shopperCount) * 100).toFixed(1);
+    // Safety check to prevent division by zero
+    if (totalSelectionsForVariant === 0) {
+      this.logger.warn(`⚠️  WARNING: totalSelectionsForVariant is 0 for variant ${variant}. Cannot calculate share of buy.`);
+      return {
+        name: testName,
+        productTitle: productTitle,
+        testid: testId,
+        variant: variant,
+        shareOfClicks: shareOfClicks,
+        shareOfBuy: '0.0',
+        valueScore: totalAverage.toFixed(1),
+        surveysAmount: surveysAmount,
+        totalSelections: totalSelectionsForVariant
+      };
+    }
+    
+    const shareOfBuy = ((surveysAmount / totalSelectionsForVariant) * 100).toFixed(1);
 
     return {
       name: testName,
@@ -852,16 +1240,22 @@ export class InsightsService {
     testId: string,
     variantProductId: string,
   ) {
+    // Get ALL clicks for this test (main products + competitors)
     const allClicksFromTest = await this.supabaseService.findMany<Event>(
       TableName.EVENTS,
       { 'metadata->>test_id': testId },
     );
 
+    // Count total clicks (main products + competitors)
     const totalClicks = allClicksFromTest.length;
+    
+    // Count clicks for this specific variant product only
     const variantClicks = allClicksFromTest.filter(
       (click) => click.metadata['product_id'] === variantProductId,
     ).length;
 
+    this.logger.log(`📊 Share of clicks calculation: ${variantClicks}/${totalClicks} = ${totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0}%`);
+    
     return totalClicks > 0 ? (variantClicks / totalClicks) * 100 : 0;
   }
 
@@ -1003,15 +1397,25 @@ export class InsightsService {
         testId,
       );
 
-      // Get comparison responses
-      const comparisonResponses =
-        await this.supabaseService.findMany<ResponseComparison>(
+      // Get comparison responses - try Walmart first, then Amazon
+      let comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
+        TableName.RESPONSES_COMPARISONS_WALMART,
+        {
+          test_id: testId,
+          product_id: variation.product_id,
+        },
+      );
+
+      // If no Walmart responses, try Amazon
+      if (comparisonResponses.length === 0) {
+        comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
           TableName.RESPONSES_COMPARISONS,
           {
             test_id: testId,
             product_id: variation.product_id,
           },
         );
+      }
 
       // Format responses for this variant
       const formattedData = surveyResponsesForSummaryFormatter(

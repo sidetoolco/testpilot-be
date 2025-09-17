@@ -18,6 +18,12 @@ export class InsightsController {
     return this.insightsService.saveAiInsights(testId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('/:testId/generate-summary')
+  generateSummaryForTest(@Param('testId') testId: string) {
+    return this.insightsService.generateSummaryForTest(testId);
+  }
+
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Put('/:insightId')
   updateInsight(

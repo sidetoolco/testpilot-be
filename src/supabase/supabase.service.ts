@@ -147,6 +147,21 @@ export class SupabaseService {
     return data;
   }
 
+  public async upsertMany<T>(
+    tableName: TableName,
+    dtoArray: Partial<T>[],
+    onConflictField: string,
+  ) {
+    const { error, data } = await this.client
+      .from(tableName)
+      .upsert(dtoArray, { onConflict: onConflictField })
+      .select();
+
+    if (error) throw error;
+
+    return data;
+  }
+
   public async findOne<T>(
     tableName: TableName,
     conditions: Record<string, any>,

@@ -15,6 +15,7 @@ import {
 import { TestsService } from './tests.service';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
 import { CreateTestDto, UpdateTestBlockDto } from './dto';
+import { SubmitTestResponseDto } from './dto/test-response.dto';
 import { ProlificService } from 'prolific/prolific.service';
 
 @UseGuards(JwtAuthGuard)
@@ -93,6 +94,65 @@ export class TestsController {
       }
       
       throw new BadRequestException(`Failed to delete test: ${error.message}`);
+    }
+  }
+
+  @Post('/response')
+  async submitTestResponse(@Body() responseData: SubmitTestResponseDto) {
+    try {
+      this.logger.log('Received test response submission', {
+        testId: responseData.session.test_id,
+        prolificPid: responseData.session.prolific_pid,
+        timingCount: responseData.timing_data?.length || 0,
+        responseCount: responseData.responses?.length || 0,
+        hasWalmartProductId: !!responseData.session.walmart_product_id,
+        timingDataSample: responseData.timing_data?.[0],
+      });
+
+      // Validate required fields
+      if (!responseData.session.test_id) {
+        throw new BadRequestException('Missing test_id in session');
+      }
+      if (!responseData.session.prolific_pid) {
+        throw new BadRequestException('Missing prolific_pid in session');
+      }
+
+      const result = await this.testsService.submitTestResponse(responseData);
+      
+      this.logger.log('Test response submitted successfully', result);
+      return result;
+    } catch (error) {
+      this.logger.error('Error submitting test response:', error);
+      throw new BadRequestException(`Failed to submit test response: ${error.message}`);
+    }
+  }
+
+  @Post('/webhook/prolific')
+  async handleProlificWebhook(@Body() webhookData: any) {
+    try {
+      this.logger.log('Received Prolific webhook', {
+        type: webhookData.type,
+        studyId: webhookData.study_id,
+        participantId: webhookData.participant_id,
+      });
+
+      // Handle different webhook types
+      switch (webhookData.type) {
+        case 'SUBMISSION_CREATED':
+          // Process submission data
+          if (webhookData.data) {
+            const result = await this.testsService.submitTestResponse(webhookData.data);
+            return { success: true, result };
+          }
+          break;
+        default:
+          this.logger.log(`Unhandled webhook type: ${webhookData.type}`);
+      }
+
+      return { success: true, message: 'Webhook processed' };
+    } catch (error) {
+      this.logger.error('Error processing Prolific webhook:', error);
+      throw new BadRequestException(`Failed to process webhook: ${error.message}`);
     }
   }
 }
