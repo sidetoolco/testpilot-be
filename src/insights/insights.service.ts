@@ -487,7 +487,7 @@ export class InsightsService {
       this.logger.log(`Grouped data keys: ${Object.keys(groupedData).join(', ')}`);
       
       const results = this.calculateCompetitorResults(
-        competitorsWithProducts,
+        testCompetitors,
         groupedData,
         variation,
         testId,
