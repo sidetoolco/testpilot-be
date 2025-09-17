@@ -541,14 +541,22 @@ export class TestsService {
   }
 
   private groupResponsesByType(
-    responses: Array<{ testers_session: { variation_type: string } }>,
+    responses: Array<{ tester_id: { variation_type: string } } | { testers_session: { variation_type: string } }>,
   ) {
     return responses.reduce((acc, item) => {
-      const type = item.testers_session.variation_type;
-      if (!acc[type]) {
-        acc[type] = [];
+      // Handle both data structures: tester_id object or testers_session object
+      const type = 'tester_id' in item && typeof item.tester_id === 'object' 
+        ? item.tester_id.variation_type
+        : 'testers_session' in item 
+          ? item.testers_session.variation_type
+          : null;
+      
+      if (type) {
+        if (!acc[type]) {
+          acc[type] = [];
+        }
+        acc[type].push(item);
       }
-      acc[type].push(item);
       return acc;
     }, {});
   }

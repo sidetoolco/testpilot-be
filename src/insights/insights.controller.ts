@@ -13,15 +13,15 @@ export class InsightsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('/:testId')
-  generateAiInsights(@Param('testId') testId: string) {
-    return this.insightsService.saveAiInsights(testId);
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post('/:testId/generate-summary')
   generateSummaryForTest(@Param('testId') testId: string) {
     return this.insightsService.generateSummaryForTest(testId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('/:testId')
+  generateAiInsights(@Param('testId') testId: string) {
+    return this.insightsService.saveAiInsights(testId);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
