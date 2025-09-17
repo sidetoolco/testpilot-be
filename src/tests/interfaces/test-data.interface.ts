@@ -54,9 +54,9 @@ export interface RawTestData {
       image_url: string;
       price: number;
     };
-    tester_id: {
+    tester_id: string;
+    testers_session: {
       variation_type: string;
-      id: string;
       prolific_pid: string;
       shopper_demographic: {
         id_prolific: string;
@@ -79,15 +79,10 @@ export interface RawTestData {
       image_url: string;
       price: number;
     };
-    amazon_products: {
-      id: string;
-      title: string;
-      image_url: string;
-      price: number;
-    };
-    tester_id: {
+    competitor_id: string;
+    tester_id: string;
+    testers_session: {
       variation_type: string;
-      id: string;
       prolific_pid: string;
       shopper_demographic: {
         id_prolific: string;
@@ -182,7 +177,7 @@ export interface Comparison {
   likes_most: string;
   choose_reason: string;
   products: Product;
-  amazon_products: Product;
+  competitor_id: string;
   tester_id: TesterInfo;
 }
 

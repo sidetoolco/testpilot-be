@@ -541,10 +541,10 @@ export class TestsService {
   }
 
   private groupResponsesByType(
-    responses: Array<{ tester_id: { variation_type: string } }>,
+    responses: Array<{ testers_session: { variation_type: string } }>,
   ) {
     return responses.reduce((acc, item) => {
-      const type = item.tester_id.variation_type;
+      const type = item.testers_session.variation_type;
       if (!acc[type]) {
         acc[type] = [];
       }

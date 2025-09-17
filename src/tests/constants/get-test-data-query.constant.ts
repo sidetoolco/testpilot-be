@@ -26,9 +26,9 @@ export const GET_TEST_DATA_QUERY = `
             target_audience,
             novelty,
             products(id, title, image_url, price),
-            tester_id(
+            tester_id,
+            testers_session!inner(
               variation_type,
-              id,
               prolific_pid,
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
