@@ -158,10 +158,14 @@ export class InsightsService {
       '*, tester_id'
     );
 
-    // Get all sessions for this test to map tester_id to variation_type
+    // Get only completed Prolific sessions (prolific_pid + ended_at) for this test
     const sessions = await this.supabaseService.findMany(
       TableName.TESTERS_SESSION,
-      { test_id: testId },
+      { 
+        test_id: testId,
+        prolific_pid: { not: null }, // Has Prolific participant ID
+        ended_at: { not: null } // Session was completed
+      },
       'id, variation_type'
     );
 
@@ -215,10 +219,14 @@ export class InsightsService {
       '*, tester_id'
     );
     
-    // Get all sessions for this test to map tester_id to variation_type
+    // Get only completed Prolific sessions (prolific_pid + ended_at) for this test
     const sessions = await this.supabaseService.findMany(
       TableName.TESTERS_SESSION,
-      { test_id: testId },
+      { 
+        test_id: testId,
+        prolific_pid: { not: null }, // Has Prolific participant ID
+        ended_at: { not: null } // Session was completed
+      },
       'id, variation_type'
     );
 
@@ -625,18 +633,36 @@ export class InsightsService {
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
 
+    // Get only completed Prolific sessions (prolific_pid + ended_at) for this test
+    const sessions = await this.supabaseService.findMany(
+      TableName.TESTERS_SESSION,
+      { 
+        test_id: testId,
+        prolific_pid: { not: null }, // Has Prolific participant ID
+        ended_at: { not: null } // Session was completed
+      },
+      'id, variation_type'
+    );
+
+    // Create a map of tester_id to variation_type
+    const sessionMap = new Map();
+    sessions.forEach((session: any) => {
+      sessionMap.set(session.id, session.variation_type);
+    });
+
     if (isWalmartTest) {
       // For Walmart tests, get comparison responses for the specific variant
       const allResponses = await this.supabaseService.findMany(
         TableName.RESPONSES_COMPARISONS_WALMART,
         { test_id: testId },
-        '*, tester_id!inner(variation_type)'
+        '*, tester_id'
       );
       
-      // Filter by variant type
-      const filteredResponses = allResponses.filter((response: any) => 
-        response.tester_id?.variation_type === variantType
-      );
+      // Filter by variant type using session mapping
+      const filteredResponses = allResponses.filter((response: any) => {
+        const variationType = sessionMap.get(response.tester_id);
+        return variationType === variantType;
+      });
       
       return filteredResponses;
     } else {
@@ -644,13 +670,14 @@ export class InsightsService {
       const allResponses = await this.supabaseService.findMany(
         TableName.RESPONSES_COMPARISONS,
         { test_id: testId },
-        '*, tester_id!inner(variation_type)'
+        '*, tester_id'
       );
       
-      // Filter by variant type
-      const filteredResponses = allResponses.filter((response: any) => 
-        response.tester_id?.variation_type === variantType
-      );
+      // Filter by variant type using session mapping
+      const filteredResponses = allResponses.filter((response: any) => {
+        const variationType = sessionMap.get(response.tester_id);
+        return variationType === variantType;
+      });
       
       return filteredResponses;
     }
