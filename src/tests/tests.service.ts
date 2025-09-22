@@ -407,6 +407,7 @@ export class TestsService {
           await this.testMonitoringService.scheduleTestCompletionCheck(
             variation.prolific_test_id,
             testId,
+            variation.variation_type,
           );
           
           // Wait 30 second before processing the next variation
