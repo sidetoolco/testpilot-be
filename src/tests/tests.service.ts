@@ -584,7 +584,8 @@ export class TestsService {
     prolificStudyId: string, 
     cost: number,
     participantCount: number,
-    rewardAmount: number
+    rewardAmount: number,
+    variationType?: string
   ): Promise<void> {
     try {
       // Find the test variation by test_id and variation_type
@@ -602,9 +603,22 @@ export class TestsService {
         return;
       }
 
-      // For now, update the first variation found
-      // In the future, you might want to pass variation_type to be more specific
-      const testVariation = testVariations[0];
+      // Find the specific variation by variation_type if provided
+      let testVariation;
+      if (variationType) {
+        testVariation = testVariations.find(v => v.variation_type === variationType);
+        if (!testVariation) {
+          this.logger.warn(`Variation ${variationType} not found for test ${testId}, using first variation`);
+          testVariation = testVariations[0];
+        }
+      } else {
+        // Fallback: find variation without prolific_test_id
+        testVariation = testVariations.find(v => !v.prolific_test_id);
+        if (!testVariation) {
+          testVariation = testVariations[0];
+          this.logger.warn(`All variations already have prolific_test_id, updating first variation for test ${testId}`);
+        }
+      }
 
       // Update the cost information and set the prolific_test_id
       await this.supabaseService.update<TestVariation>(
