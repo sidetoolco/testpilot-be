@@ -256,6 +256,31 @@ export class TestsService {
     }
   }
 
+  public async areAllVariationsComplete(testId: string): Promise<boolean> {
+    try {
+      const variations = await this.supabaseService.getByCondition<TestVariation[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'prolific_status',
+        condition: 'test_id',
+        value: testId,
+        single: false,
+      });
+
+      if (!variations || variations.length === 0) {
+        this.logger.warn(`No variations found for test ${testId}`);
+        return false;
+      }
+
+      const allComplete = variations.every(v => v.prolific_status === 'complete');
+      this.logger.log(`Variation completion check for test ${testId}: ${variations.length} variations, all complete: ${allComplete}`);
+      
+      return allComplete;
+    } catch (error) {
+      this.logger.error(`Failed to check variation completion for test ${testId}:`, error);
+      return false;
+    }
+  }
+
   public async updateTestStatus(testId: string, status: TestStatus) {
     this.testStatusGateway.emitTestStatusUpdate(testId, status);
 
@@ -608,15 +633,21 @@ export class TestsService {
       if (variationType) {
         testVariation = testVariations.find(v => v.variation_type === variationType);
         if (!testVariation) {
-          this.logger.warn(`Variation ${variationType} not found for test ${testId}, using first variation`);
-          testVariation = testVariations[0];
+          // Safer fallback: find unassigned variation instead of first variation
+          const fallback = testVariations.find(v => !v.prolific_test_id);
+          if (!fallback) {
+            this.logger.error(`Variation ${variationType} not found for test ${testId} and no unassigned variation available. Skipping cost update to avoid mis-linking.`);
+            return;
+          }
+          this.logger.warn(`Variation ${variationType} not found for test ${testId}, using unassigned variation ${fallback.variation_type}`);
+          testVariation = fallback;
         }
       } else {
         // Fallback: find variation without prolific_test_id
         testVariation = testVariations.find(v => !v.prolific_test_id);
         if (!testVariation) {
-          testVariation = testVariations[0];
-          this.logger.warn(`All variations already have prolific_test_id, updating first variation for test ${testId}`);
+          this.logger.error(`All variations already have prolific_test_id; refusing to overwrite. Skipping cost update for test ${testId}.`);
+          return;
         }
       }
 

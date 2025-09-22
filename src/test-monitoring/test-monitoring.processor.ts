@@ -32,18 +32,24 @@ export class TestMonitoringProcessor extends WorkerHost {
       const isCompleted = study.status === 'COMPLETED';
 
       if (isCompleted) {
-        this.logger.log(`Study ${studyId} is completed, updating test status for test ${testId}`);
-        
-        // Update test status to complete
-        await this.testsService.updateTestStatus(testId, 'complete');
+        this.logger.log(`Study ${studyId} is completed, updating variation status for test ${testId}`);
         
         // Update the specific variation status to complete
         await this.testsService.updateTestVariationStatus('complete', testId, variationType, studyId);
         
-        // Remove job from queue since it's completed
+        // Check if all variations are complete before marking test as complete
+        const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
+        if (allVariationsComplete) {
+          this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
+          await this.testsService.updateTestStatus(testId, 'complete');
+        } else {
+          this.logger.log(`Not all variations complete for test ${testId}, test remains active`);
+        }
+        
+        // Remove job from queue since this variation is completed
         await job.remove();
         
-        this.logger.log(`Successfully updated test ${testId} and variation status to complete`);
+        this.logger.log(`Successfully updated variation ${variationType} for test ${testId}`);
       } else {
         this.logger.log(`Study ${studyId} is not yet completed (status: ${study.status}), sending reminder`);
         await this.emailService.sendTestCompletionReminder(studyId, testId);
