@@ -467,9 +467,12 @@ export class InsightsService {
       const currentVariation = await this.supabaseService.getByCondition<{ prolific_status: string }>({
         tableName: TableName.TEST_VARIATIONS,
         selectQuery: 'prolific_status',
-        condition: 'test_id = $1 AND variation_type = $2',
-        value: [testId, variation],
+        condition: 'test_id',
+        value: testId,
         single: true,
+        additionalConditions: [
+          { key: 'variation_type' as any, value: variation },
+        ],
       });
       
       if (currentVariation?.prolific_status !== 'complete') {
