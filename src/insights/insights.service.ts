@@ -439,12 +439,33 @@ export class InsightsService {
 
       await this.saveInsightStatus(testId, variantChoosen.variation_type);
 
+      // Check if all variations are complete and update test status if needed
+      const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
+      if (allVariationsComplete) {
+        this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
+        await this.testsService.updateTestStatus(testId, 'complete');
+        
+        // Generate AI insights when test completes
+        try {
+          this.logger.log(`Test ${testId} completed, generating AI insights...`);
+          await this.saveAiInsights(testId);
+          this.logger.log(`AI insights generated successfully for test ${testId}`);
+        } catch (error) {
+          this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
+          // Don't throw error - test completion should not fail if insights generation fails
+        }
+      } else {
+        this.logger.log(`Not all variations complete for test ${testId}, test remains active`);
+      }
+
       return {
         testId,
         variation,
         summaries: [savedSummary],
         purchaseDrivers: [variantPurchaseDrivers],
         competitiveInsights: variantCompetitiveInsights,
+        allVariationsComplete,
+        testStatus: allVariationsComplete ? 'complete' : 'active',
       };
     } catch (error) {
       this.logger.error(
