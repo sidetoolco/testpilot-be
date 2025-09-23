@@ -184,7 +184,8 @@ export class ProlificService {
           study.id,
           studyCost.total_cost,
           createTestDto.targetNumberOfParticipants,
-          createTestDto.incentiveAmount
+          createTestDto.incentiveAmount,
+          createTestDto.variationType
         );
         
         this.logger.log(`Stored study cost for ${study.id}: ${studyCost.total_cost} cents`);

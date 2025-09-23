@@ -13,7 +13,7 @@ import { UsersModule } from 'users/users.module';
   imports: [
     SupabaseModule,
     forwardRef(() => ProlificModule),
-    TestMonitoringModule,
+    forwardRef(() => TestMonitoringModule),
     CreditsModule,
     UsersModule,
   ],
