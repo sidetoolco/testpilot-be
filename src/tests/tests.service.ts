@@ -286,6 +286,56 @@ export class TestsService {
     }
   }
 
+  /**
+   * Centralized method to finalize test completion if all variations are complete.
+   * This method handles the complete flow: check variations and update status.
+   * AI insights generation is handled by the calling service to avoid circular dependencies.
+   * Used by N8N webhook, 24-hour monitoring, and manual completion endpoints.
+   */
+  public async finalizeIfComplete(testId: string): Promise<{
+    completed: boolean;
+    allVariationsComplete: boolean;
+    testStatus: string;
+  }> {
+    try {
+      // Check if all variations are complete
+      const allVariationsComplete = await this.areAllVariationsComplete(testId);
+      
+      if (!allVariationsComplete) {
+        this.logger.log(`Not all variations complete for test ${testId}, test remains active`);
+        return {
+          completed: false,
+          allVariationsComplete: false,
+          testStatus: 'active',
+        };
+      }
+
+      // Check if test is already complete to prevent duplicate completion
+      const currentTest = await this.getTestById(testId);
+      if (currentTest.status === 'complete') {
+        this.logger.log(`Test ${testId} is already complete, skipping completion logic`);
+        return {
+          completed: true,
+          allVariationsComplete: true,
+          testStatus: 'complete',
+        };
+      }
+
+      // Update test status to complete
+      this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
+      await this.updateTestStatus(testId, 'complete');
+
+      return {
+        completed: true,
+        allVariationsComplete: true,
+        testStatus: 'complete',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to finalize test completion for ${testId}:`, error);
+      throw error;
+    }
+  }
+
   public async updateTestStatus(testId: string, status: TestStatus) {
     // Prepare update payload
     const updatePayload: { status: TestStatus; block?: boolean } = { status };

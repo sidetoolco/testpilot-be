@@ -37,24 +37,19 @@ export class TestsController {
   @Post('/:id/check-completion')
   async checkTestCompletion(@Param('id') testId: string) {
     try {
-      // Check if all variations are complete
-      const allComplete = await this.testsService.areAllVariationsComplete(testId);
+      // Use centralized completion logic
+      const result = await this.testsService.finalizeIfComplete(testId);
       
-      if (allComplete) {
-        // Update test status to complete
-        await this.testsService.updateTestStatus(testId, 'complete');
-        return { 
-          message: 'Test status updated to complete', 
-          testId, 
-          allVariationsComplete: true 
-        };
-      } else {
-        return { 
-          message: 'Not all variations are complete yet', 
-          testId, 
-          allVariationsComplete: false 
-        };
-      }
+      return {
+        message: result.completed 
+          ? 'Test status updated to complete' 
+          : 'Not all variations are complete yet',
+        testId,
+        ...result,
+        note: result.completed 
+          ? 'Note: AI insights are not generated via this endpoint. Use /insights endpoint for full processing.'
+          : undefined,
+      };
     } catch (error) {
       this.logger.error(`Error checking test completion for ${testId}:`, error);
       throw error;

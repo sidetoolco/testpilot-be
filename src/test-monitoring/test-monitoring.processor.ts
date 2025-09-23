@@ -41,19 +41,17 @@ export class TestMonitoringProcessor extends WorkerHost {
         // Update the specific variation status to complete
         await this.testsService.updateTestVariationStatus('complete', testId, variationType, studyId);
         
-        // Check if all variations are complete before marking test as complete
-        const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
-        if (allVariationsComplete) {
-          // Check if test is already complete to prevent duplicate completion
-          const currentTest = await this.testsService.getTestById(testId);
-          if (currentTest.status !== 'complete') {
-            this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
-            await this.testsService.updateTestStatus(testId, 'complete');
-          } else {
-            this.logger.log(`Test ${testId} is already complete, skipping completion logic`);
-          }
+        // Use centralized completion logic
+        const completionResult = await this.testsService.finalizeIfComplete(testId);
+        
+        if (completionResult.completed) {
+          this.logger.log(`Test ${testId} completion finalized: status=${completionResult.testStatus}`);
+          
+          // Note: AI insights are not generated in 24-hour monitoring
+          // They are only generated when N8N webhook calls /insights endpoint
+          this.logger.log(`Test ${testId} completed via 24-hour monitoring - AI insights will be generated when N8N webhook processes the completion`);
         } else {
-          this.logger.log(`Not all variations complete for test ${testId}, test remains active`);
+          this.logger.log(`Test ${testId} not ready for completion: ${completionResult.allVariationsComplete ? 'all variations complete but already finalized' : 'not all variations complete'}`);
         }
         
         // Remove job from queue since this variation is completed

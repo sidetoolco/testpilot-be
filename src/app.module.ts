@@ -47,12 +47,11 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
               if (times > 5) return null;
               return Math.pow(2, times) * 100;
             },
-            // Reduce Redis requests by limiting retries and connections
-            lazyConnect: true,
-            maxRetriesPerRequest: 1,
-            enableOfflineQueue: false,
-            // Reduce polling frequency to prevent Redis limit exceeded
-            maxmemoryPolicy: 'allkeys-lru',
+              // Reduce Redis requests by limiting retries and connections
+              lazyConnect: true,
+              maxRetriesPerRequest: 1,
+              enableOfflineQueue: false,
+              // Note: maxmemoryPolicy should be configured on Redis server, not client
           },
           // Global settings to reduce polling
           defaultJobOptions: {

@@ -29,7 +29,7 @@ export class TestMonitoringService {
           attempts: 3,
           backoff: {
             type: 'exponential',
-            delay: 24 * 60 * 60 * 1000, // 24 hours
+            delay: 15 * 60 * 1000, // 15 minutes base delay for retries
           },
         },
       );
