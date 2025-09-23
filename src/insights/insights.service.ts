@@ -3,6 +3,8 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
@@ -39,6 +41,7 @@ export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
 
   constructor(
+    @Inject(forwardRef(() => TestsService))
     private readonly testsService: TestsService,
     private readonly prolificService: ProlificService,
     private readonly productsService: ProductsService,

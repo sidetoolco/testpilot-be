@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { InsightsService } from './insights.service';
 import { InsightsController } from './insights.controller';
 import { TestsModule } from 'tests/tests.module';
@@ -13,7 +13,7 @@ import { UsersModule } from 'users/users.module';
   providers: [InsightsService],
   controllers: [InsightsController],
   imports: [
-    TestsModule,
+    forwardRef(() => TestsModule),
     ProlificModule,
     ProductsModule,
     SupabaseModule,
@@ -21,5 +21,6 @@ import { UsersModule } from 'users/users.module';
     AdalineModule,
     UsersModule,
   ],
+  exports: [InsightsService],
 })
 export class InsightsModule {}

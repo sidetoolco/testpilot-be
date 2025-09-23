@@ -34,6 +34,33 @@ export class TestsController {
     return this.testsService.getRawDataByTestId(testId);
   }
 
+  @Post('/:id/check-completion')
+  async checkTestCompletion(@Param('id') testId: string) {
+    try {
+      // Check if all variations are complete
+      const allComplete = await this.testsService.areAllVariationsComplete(testId);
+      
+      if (allComplete) {
+        // Update test status to complete
+        await this.testsService.updateTestStatus(testId, 'complete');
+        return { 
+          message: 'Test status updated to complete', 
+          testId, 
+          allVariationsComplete: true 
+        };
+      } else {
+        return { 
+          message: 'Not all variations are complete yet', 
+          testId, 
+          allVariationsComplete: false 
+        };
+      }
+    } catch (error) {
+      this.logger.error(`Error checking test completion for ${testId}:`, error);
+      throw error;
+    }
+  }
+
   @Post()
   async createTest(@Body() dto: CreateTestDto) {
     // Create the study in Prolific

@@ -3,6 +3,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
 import {
@@ -26,6 +28,7 @@ import { ProlificService } from 'prolific/prolific.service';
 import { TestStatusGateway } from './gateways/test-status.gateway';
 import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 import { CreditsService } from 'credits/credits.service';
+import { InsightsService } from 'insights/insights.service';
 
 @Injectable()
 export class TestsService {
@@ -37,6 +40,8 @@ export class TestsService {
     private readonly testStatusGateway: TestStatusGateway,
     private readonly testMonitoringService: TestMonitoringService,
     private readonly creditsService: CreditsService,
+    @Inject(forwardRef(() => InsightsService))
+    private readonly insightsService: InsightsService,
   ) {}
 
   public async getTestById(testId: string): Promise<Test> {
@@ -257,8 +262,6 @@ export class TestsService {
   }
 
   public async updateTestStatus(testId: string, status: TestStatus) {
-    this.testStatusGateway.emitTestStatusUpdate(testId, status);
-
     // Prepare update payload
     const updatePayload: { status: TestStatus; block?: boolean } = { status };
 
@@ -271,9 +274,55 @@ export class TestsService {
       }
     }
 
-    return this.supabaseService.update<Test>(TableName.TESTS, updatePayload, [
+    // Update database first
+    const result = await this.supabaseService.update<Test>(TableName.TESTS, updatePayload, [
       { key: 'id', value: testId },
     ]);
+
+    // Then emit WebSocket notification after successful database update
+    this.testStatusGateway.emitTestStatusUpdate(testId, status);
+
+    // Generate AI insights automatically when test status changes to complete
+    if (status === 'complete') {
+      try {
+        this.logger.log(`Test ${testId} completed, generating AI insights...`);
+        await this.insightsService.saveAiInsights(testId);
+        this.logger.log(`AI insights generated successfully for test ${testId}`);
+      } catch (error) {
+        this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
+        // Don't throw error - test completion should not fail if insights generation fails
+      }
+    }
+
+    return result;
+  }
+
+  public async areAllVariationsComplete(testId: string): Promise<boolean> {
+    try {
+      // Get all variations for this test using the existing service method
+      const variations = await this.supabaseService.getByCondition<{ prolific_status: string }[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'prolific_status',
+        condition: 'test_id',
+        value: testId,
+        single: false,
+      });
+
+      if (!variations || variations.length === 0) {
+        this.logger.warn(`No variations found for test ${testId}`);
+        return false;
+      }
+
+      // Check if all variations have prolific_status = 'complete'
+      const allComplete = variations.every(variation => variation.prolific_status === 'complete');
+      
+      this.logger.log(`Test ${testId} - All variations complete: ${allComplete} (${variations.length} variations checked)`);
+      
+      return allComplete;
+    } catch (error) {
+      this.logger.error(`Error checking if all variations are complete for test ${testId}:`, error);
+      return false;
+    }
   }
 
   public async deleteTest(testId: string) {
@@ -414,6 +463,7 @@ export class TestsService {
           await this.testMonitoringService.scheduleTestCompletionCheck(
             variation.prolific_test_id,
             testId,
+            variation.variation_type,
           );
           
           // Wait 30 second before processing the next variation

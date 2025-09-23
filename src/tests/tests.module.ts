@@ -7,6 +7,7 @@ import { TestMonitoringModule } from 'test-monitoring/test-monitoring.module';
 import { TestStatusGateway } from './gateways/test-status.gateway';
 import { CreditsModule } from 'credits/credits.module';
 import { UsersModule } from 'users/users.module';
+import { InsightsModule } from 'insights/insights.module';
 
 @Module({
   providers: [TestsService, TestStatusGateway],
@@ -16,6 +17,7 @@ import { UsersModule } from 'users/users.module';
     TestMonitoringModule,
     CreditsModule,
     UsersModule,
+    forwardRef(() => InsightsModule),
   ],
   controllers: [TestsController],
   exports: [TestsService],

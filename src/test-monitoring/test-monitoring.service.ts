@@ -13,26 +13,28 @@ export class TestMonitoringService {
   async scheduleTestCompletionCheck(
     studyId: string,
     testId: string,
+    variationType: string,
   ) {
     try {
-      // Schedule the job to run after 72 hours
+      // Schedule the job to run after 24 hours
       await this.testCompletionQueue.add(
         'check-test-completion',
         {
           studyId,
           testId,
+          variationType,
         },
         {
-          delay: 72 * 60 * 60 * 1000, // 72 hours to milliseconds
+          delay: 24 * 60 * 60 * 1000, // 24 hours to milliseconds
           attempts: 3,
           backoff: {
             type: 'exponential',
-            delay: 1000 * 60 * 60, // 1 hour
+            delay: 24 * 60 * 60 * 1000, // 24 hours
           },
         },
       );
 
-      this.logger.log(`Scheduled completion check for study ${studyId}`);
+      this.logger.log(`Scheduled completion check for study ${studyId} (variation: ${variationType})`);
     } catch (error) {
       this.logger.error(
         `Failed to schedule completion check for study ${studyId}:`,
