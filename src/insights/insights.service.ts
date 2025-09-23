@@ -380,11 +380,26 @@ export class InsightsService {
       }
 
       const formattedStatus = this.prolificService.formatStatus(study.status);
-      await this.testsService.updateTestVariationStatus(
-        formattedStatus,
-        testId,
-        variation,
-      );
+      
+      // Only update variation status if it's not already complete
+      // This prevents duplicate updates from N8N workflow
+      const currentVariation = await this.supabaseService.getByCondition<{ prolific_status: string }>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'prolific_status',
+        condition: 'test_id = $1 AND variation_type = $2',
+        value: [testId, variation],
+        single: true,
+      });
+      
+      if (currentVariation?.prolific_status !== 'complete') {
+        await this.testsService.updateTestVariationStatus(
+          formattedStatus,
+          testId,
+          variation,
+        );
+      } else {
+        this.logger.log(`Variation ${variation} for test ${testId} is already complete, skipping status update`);
+      }
 
       const [test, testVariations] = await Promise.all([
         this.testsService.getRawDataByTestId(testId),
@@ -442,17 +457,23 @@ export class InsightsService {
       // Check if all variations are complete and update test status if needed
       const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
       if (allVariationsComplete) {
-        this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
-        await this.testsService.updateTestStatus(testId, 'complete');
-        
-        // Generate AI insights when test completes
-        try {
-          this.logger.log(`Test ${testId} completed, generating AI insights...`);
-          await this.saveAiInsights(testId);
-          this.logger.log(`AI insights generated successfully for test ${testId}`);
-        } catch (error) {
-          this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
-          // Don't throw error - test completion should not fail if insights generation fails
+        // Check if test is already complete to prevent duplicate completion
+        const currentTest = await this.testsService.getTestById(testId);
+        if (currentTest.status !== 'complete') {
+          this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
+          await this.testsService.updateTestStatus(testId, 'complete');
+          
+          // Generate AI insights when test completes
+          try {
+            this.logger.log(`Test ${testId} completed, generating AI insights...`);
+            await this.saveAiInsights(testId);
+            this.logger.log(`AI insights generated successfully for test ${testId}`);
+          } catch (error) {
+            this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
+            // Don't throw error - test completion should not fail if insights generation fails
+          }
+        } else {
+          this.logger.log(`Test ${testId} is already complete, skipping completion logic`);
         }
       } else {
         this.logger.log(`Not all variations complete for test ${testId}, test remains active`);

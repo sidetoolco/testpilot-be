@@ -44,8 +44,14 @@ export class TestMonitoringProcessor extends WorkerHost {
         // Check if all variations are complete before marking test as complete
         const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
         if (allVariationsComplete) {
-          this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
-          await this.testsService.updateTestStatus(testId, 'complete');
+          // Check if test is already complete to prevent duplicate completion
+          const currentTest = await this.testsService.getTestById(testId);
+          if (currentTest.status !== 'complete') {
+            this.logger.log(`All variations complete for test ${testId}, marking test as complete`);
+            await this.testsService.updateTestStatus(testId, 'complete');
+          } else {
+            this.logger.log(`Test ${testId} is already complete, skipping completion logic`);
+          }
         } else {
           this.logger.log(`Not all variations complete for test ${testId}, test remains active`);
         }
