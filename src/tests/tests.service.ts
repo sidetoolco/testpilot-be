@@ -3,8 +3,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  forwardRef,
-  Inject,
 } from '@nestjs/common';
 import { SupabaseService } from 'supabase/supabase.service';
 import {
@@ -28,7 +26,7 @@ import { ProlificService } from 'prolific/prolific.service';
 import { TestStatusGateway } from './gateways/test-status.gateway';
 import { TestMonitoringService } from 'test-monitoring/test-monitoring.service';
 import { CreditsService } from 'credits/credits.service';
-import { InsightsService } from 'insights/insights.service';
+ 
 
 @Injectable()
 export class TestsService {
@@ -40,8 +38,6 @@ export class TestsService {
     private readonly testStatusGateway: TestStatusGateway,
     private readonly testMonitoringService: TestMonitoringService,
     private readonly creditsService: CreditsService,
-    @Inject(forwardRef(() => InsightsService))
-    private readonly insightsService: InsightsService,
   ) {}
 
   public async getTestById(testId: string): Promise<Test> {
