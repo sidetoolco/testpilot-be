@@ -1,14 +1,13 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, forwardRef, Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { EmailService } from 'email/email.service';
 import { ProlificService } from 'prolific/prolific.service';
 import { TestsService } from 'tests/tests.service';
-import { forwardRef, Inject } from '@nestjs/common';
 
 @Processor('test-completion', {
   // Reduce polling frequency to save Redis requests
-  // Since jobs have 72-hour delays, we don't need frequent polling
+  // Since jobs have 24-hour delays, we don't need frequent polling
   concurrency: 1,
   limiter: {
     max: 1, // Process max 1 job per interval

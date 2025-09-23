@@ -14,7 +14,7 @@ import { InsightsModule } from 'insights/insights.module';
   imports: [
     SupabaseModule,
     forwardRef(() => ProlificModule),
-    TestMonitoringModule,
+    forwardRef(() => TestMonitoringModule),
     CreditsModule,
     UsersModule,
     forwardRef(() => InsightsModule),

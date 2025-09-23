@@ -261,6 +261,31 @@ export class TestsService {
     }
   }
 
+  public async areAllVariationsComplete(testId: string): Promise<boolean> {
+    try {
+      const variations = await this.supabaseService.getByCondition<TestVariation[]>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'prolific_status',
+        condition: 'test_id',
+        value: testId,
+        single: false,
+      });
+
+      if (!variations || variations.length === 0) {
+        this.logger.warn(`No variations found for test ${testId}`);
+        return false;
+      }
+
+      const allComplete = variations.every(v => v.prolific_status === 'complete');
+      this.logger.log(`Variation completion check for test ${testId}: ${variations.length} variations, all complete: ${allComplete}`);
+      
+      return allComplete;
+    } catch (error) {
+      this.logger.error(`Failed to check variation completion for test ${testId}:`, error);
+      return false;
+    }
+  }
+
   public async updateTestStatus(testId: string, status: TestStatus) {
     // Prepare update payload
     const updatePayload: { status: TestStatus; block?: boolean } = { status };
@@ -297,33 +322,6 @@ export class TestsService {
     return result;
   }
 
-  public async areAllVariationsComplete(testId: string): Promise<boolean> {
-    try {
-      // Get all variations for this test using the existing service method
-      const variations = await this.supabaseService.getByCondition<{ prolific_status: string }[]>({
-        tableName: TableName.TEST_VARIATIONS,
-        selectQuery: 'prolific_status',
-        condition: 'test_id',
-        value: testId,
-        single: false,
-      });
-
-      if (!variations || variations.length === 0) {
-        this.logger.warn(`No variations found for test ${testId}`);
-        return false;
-      }
-
-      // Check if all variations have prolific_status = 'complete'
-      const allComplete = variations.every(variation => variation.prolific_status === 'complete');
-      
-      this.logger.log(`Test ${testId} - All variations complete: ${allComplete} (${variations.length} variations checked)`);
-      
-      return allComplete;
-    } catch (error) {
-      this.logger.error(`Error checking if all variations are complete for test ${testId}:`, error);
-      return false;
-    }
-  }
 
   public async deleteTest(testId: string) {
     try {
@@ -638,7 +636,8 @@ export class TestsService {
     prolificStudyId: string, 
     cost: number,
     participantCount: number,
-    rewardAmount: number
+    rewardAmount: number,
+    variationType?: string
   ): Promise<void> {
     try {
       // Find the test variation by test_id and variation_type
@@ -656,9 +655,28 @@ export class TestsService {
         return;
       }
 
-      // For now, update the first variation found
-      // In the future, you might want to pass variation_type to be more specific
-      const testVariation = testVariations[0];
+      // Find the specific variation by variation_type if provided
+      let testVariation;
+      if (variationType) {
+        testVariation = testVariations.find(v => v.variation_type === variationType);
+        if (!testVariation) {
+          // Safer fallback: find unassigned variation instead of first variation
+          const fallback = testVariations.find(v => !v.prolific_test_id);
+          if (!fallback) {
+            this.logger.error(`Variation ${variationType} not found for test ${testId} and no unassigned variation available. Skipping cost update to avoid mis-linking.`);
+            return;
+          }
+          this.logger.warn(`Variation ${variationType} not found for test ${testId}, using unassigned variation ${fallback.variation_type}`);
+          testVariation = fallback;
+        }
+      } else {
+        // Fallback: find variation without prolific_test_id
+        testVariation = testVariations.find(v => !v.prolific_test_id);
+        if (!testVariation) {
+          this.logger.error(`All variations already have prolific_test_id; refusing to overwrite. Skipping cost update for test ${testId}.`);
+          return;
+        }
+      }
 
       // Update the cost information and set the prolific_test_id
       await this.supabaseService.update<TestVariation>(
