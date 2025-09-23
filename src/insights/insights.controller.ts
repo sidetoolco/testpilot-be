@@ -1,15 +1,18 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards, ParseIntPipe, BadRequestException } from '@nestjs/common';
 import { InsightsService } from './insights.service';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
-import { GenerateStudyInsightsDto, UpdateInsightDto } from './dto';
+import { UpdateInsightDto } from './dto';
 
 @Controller('insights')
 export class InsightsController {
   constructor(private readonly insightsService: InsightsService) {}
 
   @Post()
-  generateStudyInsights(@Body() dto: GenerateStudyInsightsDto) {
-    return this.insightsService.generateStudyInsights(dto.studyId);
+  generateStudyInsights(@Body('studyId') studyId: string) {
+    if (!studyId) {
+      throw new BadRequestException('Study ID is required');
+    }
+    return this.insightsService.generateStudyInsights(studyId);
   }
 
   @UseGuards(JwtAuthGuard)
