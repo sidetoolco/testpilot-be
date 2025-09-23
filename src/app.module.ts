@@ -51,6 +51,8 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
             lazyConnect: true,
             maxRetriesPerRequest: 1,
             enableOfflineQueue: false,
+            // Reduce polling frequency to prevent Redis limit exceeded
+            maxmemoryPolicy: 'allkeys-lru',
           },
           // Global settings to reduce polling
           defaultJobOptions: {
@@ -62,6 +64,8 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
               delay: 2000,
             },
           },
+          // Disable polling completely by using blocking connections
+          blockingConnection: true,
         };
       },
       inject: [ConfigService],

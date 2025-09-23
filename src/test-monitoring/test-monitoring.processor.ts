@@ -6,13 +6,9 @@ import { ProlificService } from 'prolific/prolific.service';
 import { TestsService } from 'tests/tests.service';
 
 @Processor('test-completion', {
-  // Reduce polling frequency to save Redis requests
-  // Since jobs have 24-hour delays, we don't need frequent polling
+  // Disable polling completely - worker will only wake up when jobs are available
   concurrency: 1,
-  limiter: {
-    max: 1, // Process max 1 job per interval
-    duration: 60 * 60 * 1000, // 1 hour interval - much less frequent than default 5 seconds
-  },
+  blockingConnection: true,
 })
 export class TestMonitoringProcessor extends WorkerHost {
   private readonly logger = new Logger(TestMonitoringProcessor.name);
