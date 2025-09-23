@@ -424,9 +424,6 @@ export class TestsService {
 
   public async publishTest(testId: string) {
     try {
-      // Update test status to "in progress" at the start (like old version)
-      await this.updateTestStatus(testId, 'in progress');
-
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
 
@@ -482,6 +479,9 @@ export class TestsService {
         testId,
         requiredCredits,
       );
+
+      // Update test status to "active" after successful publish
+      await this.updateTestStatus(testId, 'active');
 
       this.logger.log(
         `Successfully published test ${testId} with ${requiredCredits} credits used`,
