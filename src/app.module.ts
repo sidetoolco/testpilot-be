@@ -47,6 +47,20 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
               if (times > 5) return null;
               return Math.pow(2, times) * 100;
             },
+            // Reduce Redis requests by limiting retries and connections
+            lazyConnect: true,
+            maxRetriesPerRequest: 1,
+            enableOfflineQueue: false,
+          },
+          // Global settings to reduce polling
+          defaultJobOptions: {
+            removeOnComplete: 10,
+            removeOnFail: 5,
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 2000,
+            },
           },
         };
       },

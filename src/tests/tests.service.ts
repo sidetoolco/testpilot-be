@@ -375,12 +375,19 @@ export class TestsService {
 
   public async publishTest(testId: string) {
     try {
+      // Update test status to "in progress" at the start (like old version)
+      await this.updateTestStatus(testId, 'in progress');
+
       const test = await this.getTestById(testId);
       const testDemographics = await this.getTestDemographics(testId);
 
+      // Get participant count and screening from test_demographics table
+      const targetParticipantCount = testDemographics.tester_count;
+      const customScreeningEnabled = testDemographics.custom_screening_enabled || false;
+
       const requiredCredits = this.creditsService.calculateTestCredits(
-        test.target_participant_count,
-        test.custom_screening_enabled,
+        targetParticipantCount,
+        customScreeningEnabled,
       );
 
       // Check if company has enough credits
@@ -425,8 +432,6 @@ export class TestsService {
         testId,
         requiredCredits,
       );
-
-      await this.updateTestStatus(testId, 'active');
 
       this.logger.log(
         `Successfully published test ${testId} with ${requiredCredits} credits used`,
