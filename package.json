@@ -30,6 +30,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.0.0",
+    "@nestjs/schedule": "^6.0.1",
     "@nestjs/websockets": "^10.0.0",
     "@supabase/supabase-js": "^2.49.4",
     "@types/stripe": "^8.0.416",

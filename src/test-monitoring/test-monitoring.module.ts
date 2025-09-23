@@ -1,21 +1,18 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TestMonitoringService } from './test-monitoring.service';
-import { BullModule } from '@nestjs/bullmq';
 import { ProlificModule } from 'prolific/prolific.module';
-import { TestMonitoringProcessor } from './test-monitoring.processor';
 import { EmailModule } from 'email/email.module';
 import { TestsModule } from 'tests/tests.module';
+import { SupabaseModule } from 'supabase/supabase.module';
 
 @Module({
   imports: [
-    BullModule.registerQueue({
-      name: 'test-completion',
-    }),
+    SupabaseModule,
     ProlificModule,
     EmailModule,
     forwardRef(() => TestsModule)
   ],
-  providers: [TestMonitoringService, TestMonitoringProcessor],
+  providers: [TestMonitoringService],
   exports: [TestMonitoringService],
 })
 export class TestMonitoringModule {}

@@ -15,7 +15,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { UsersModule } from './users/users.module';
 import { ScreeningModule } from './screening/screening.module';
 import { TestMonitoringModule } from './test-monitoring/test-monitoring.module';
-import { BullModule } from '@nestjs/bullmq';
+import { ScheduleModule } from '@nestjs/schedule';
 import { EmailModule } from './email/email.module';
 import { CompaniesModule } from './companies/companies.module';
 import { CreditsModule } from './credits/credits.module';
@@ -26,49 +26,7 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
   imports: [
     AuthModule,
     ConfigModule.forRoot({ isGlobal: true }),
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => {
-        const redisUrl = configService.get<string>('REDIS_URL');
-        const isTLS = !redisUrl?.includes('localhost');
-
-        return {
-          connection: {
-            url: redisUrl,
-            ...(isTLS
-              ? {
-                  tls: {
-                    rejectUnauthorized: false,
-                  },
-                }
-              : {}),
-            enableReadyCheck: false,
-            retryStrategy: (times: number) => {
-              if (times > 5) return null;
-              return Math.pow(2, times) * 100;
-            },
-              // Reduce Redis requests by limiting retries and connections
-              lazyConnect: true,
-              maxRetriesPerRequest: 1,
-              enableOfflineQueue: false,
-              // Note: maxmemoryPolicy should be configured on Redis server, not client
-          },
-          // Global settings to reduce polling
-          defaultJobOptions: {
-            removeOnComplete: 10,
-            removeOnFail: 5,
-            attempts: 3,
-            backoff: {
-              type: 'exponential',
-              delay: 2000,
-            },
-          },
-          // Disable polling completely by using blocking connections
-          blockingConnection: true,
-        };
-      },
-      inject: [ConfigService],
-    }),
+    ScheduleModule.forRoot(),
     SupabaseModule,
     TestsModule,
     InsightsModule,
