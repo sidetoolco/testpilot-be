@@ -145,8 +145,6 @@ export interface Test {
   complete_email: boolean;
   objective: TestObjective;
   step?: string;
-  target_participant_count: number;
-  custom_screening_enabled: boolean;
   block: boolean;
 }
 

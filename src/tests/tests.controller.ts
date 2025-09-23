@@ -34,6 +34,28 @@ export class TestsController {
     return this.testsService.getRawDataByTestId(testId);
   }
 
+  @Post('/:id/check-completion')
+  async checkTestCompletion(@Param('id') testId: string) {
+    try {
+      // Use centralized completion logic
+      const result = await this.testsService.finalizeIfComplete(testId);
+      
+      return {
+        message: result.completed 
+          ? 'Test status updated to complete' 
+          : 'Not all variations are complete yet',
+        testId,
+        ...result,
+        note: result.completed 
+          ? 'Note: AI insights are not generated via this endpoint. Use /insights endpoint for full processing.'
+          : undefined,
+      };
+    } catch (error) {
+      this.logger.error(`Error checking test completion for ${testId}:`, error);
+      throw error;
+    }
+  }
+
   @Post()
   async createTest(@Body() dto: CreateTestDto) {
     // Create the study in Prolific

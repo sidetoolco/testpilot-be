@@ -3,6 +3,8 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { TableName } from 'lib/enums';
 import { calculateAverageScore } from 'lib/helpers';
@@ -39,6 +41,7 @@ export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
 
   constructor(
+    @Inject(forwardRef(() => TestsService))
     private readonly testsService: TestsService,
     private readonly prolificService: ProlificService,
     private readonly productsService: ProductsService,
@@ -48,13 +51,51 @@ export class InsightsService {
   ) {}
 
   public async generateSummaryForTest(testId: string) {
+    this.logger.log(`🔍 ===== GENERATING SUMMARY FOR TEST ${testId} WITH COMPLETION CHECK =====`);
+    
     try {
-      this.logger.log(`🚀 Starting generateSummaryForTest for test ${testId}`);
-      const test = await this.testsService.getTestById(testId);
+      // Step 1: Get current test status
+      this.logger.log(`📋 Step 1: Getting current test status...`);
+      const currentTest = await this.testsService.getTestById(testId);
+      this.logger.log(`📋 Current test status: ${currentTest.status}`);
+      this.logger.log(`📋 Test name: ${currentTest.name}`);
+      this.logger.log(`📋 Test block status: ${currentTest.block}`);
+
+      // Step 2: Get all variations and their statuses
+      this.logger.log(`📊 Step 2: Getting all test variations...`);
       const testVariations = await this.testsService.getTestVariations(testId);
+      this.logger.log(`📊 Found ${testVariations.length} variations:`);
+      
+      for (const variation of testVariations) {
+        this.logger.log(`📊   - Variation ${variation.variation_type}: prolific_status = ${variation.prolific_status}, prolific_test_id = ${variation.prolific_test_id}`);
+      }
 
-      this.logger.log(`📊 Found ${testVariations.length} test variations:`, testVariations.map(v => ({ id: v.id, variation_type: v.variation_type, product_id: v.product_id })));
+      // Step 3: Check if all variations are complete
+      this.logger.log(`🔍 Step 3: Checking if all variations are complete...`);
+      const allVariationsComplete = await this.testsService.areAllVariationsComplete(testId);
+      this.logger.log(`🔍 All variations complete: ${allVariationsComplete}`);
 
+      // Step 4: If not all complete, show which ones are missing
+      if (!allVariationsComplete) {
+        this.logger.log(`⚠️  Not all variations are complete. Checking individual statuses...`);
+        for (const variation of testVariations) {
+          if (variation.prolific_status !== 'complete') {
+            this.logger.log(`⚠️   - Variation ${variation.variation_type} is NOT complete (status: ${variation.prolific_status})`);
+          } else {
+            this.logger.log(`✅   - Variation ${variation.variation_type} is complete`);
+          }
+        }
+      }
+
+      // Step 5: Try to finalize completion
+      this.logger.log(`🔄 Step 5: Attempting to finalize test completion...`);
+      const completionResult = await this.testsService.finalizeIfComplete(testId);
+      this.logger.log(`🔄 Completion result:`, completionResult);
+
+      // Step 6: Generate summary data (original logic)
+      this.logger.log(`📈 Step 6: Generating summary data...`);
+      this.logger.log(`🚀 Starting generateSummaryForTest for test ${testId}`);
+      
       const results = [];
 
       for (const variation of testVariations) {
@@ -79,7 +120,7 @@ export class InsightsService {
             const totalSelectionsForVariant = await this.getTotalSelectionsForVariant(testId, variation.variation_type);
             
             const summary = this.generateVariantSummary(
-              test.name,
+              currentTest.name,
               variation.product?.title || 'Unknown Product',
               testId,
               variation.variation_type,
@@ -120,6 +161,8 @@ export class InsightsService {
               purchaseDrivers: variantPurchaseDrivers,
               competitiveInsights: variantCompetitiveInsights,
             });
+          } else {
+            this.logger.warn(`No responses found for variant ${variation.variation_type}, skipping`);
           }
         } catch (error) {
           this.logger.error(
@@ -129,25 +172,66 @@ export class InsightsService {
         }
       }
 
+      // Step 7: Generate AI insights if test is complete
+      let aiInsightsResult = null;
+      if (completionResult.completed) {
+        this.logger.log(`🤖 Step 7: Generating AI insights...`);
+        try {
+          aiInsightsResult = await this.saveAiInsights(testId);
+          this.logger.log(`🤖 AI insights generated successfully`);
+        } catch (error) {
+          this.logger.error(`❌ Failed to generate AI insights:`, error);
+        }
+      } else {
+        this.logger.log(`⏭️  Step 7: Skipping AI insights - test not complete`);
+      }
+
+      // Step 8: Get final test status
+      this.logger.log(`📋 Step 8: Getting final test status...`);
+      const finalTest = await this.testsService.getTestById(testId);
+      this.logger.log(`📋 Final test status: ${finalTest.status}`);
+      this.logger.log(`📋 Final test block status: ${finalTest.block}`);
+
+      // Step 9: Summary
+      this.logger.log(`🎯 ===== GENERATE SUMMARY COMPLETION SUMMARY =====`);
+      this.logger.log(`🎯 Test ID: ${testId}`);
+      this.logger.log(`🎯 Initial Status: ${currentTest.status}`);
+      this.logger.log(`🎯 Final Status: ${finalTest.status}`);
+      this.logger.log(`🎯 All Variations Complete: ${allVariationsComplete}`);
+      this.logger.log(`🎯 Completion Triggered: ${completionResult.completed}`);
+      this.logger.log(`🎯 Summary Generated: ${results.length} variants`);
+      this.logger.log(`🎯 AI Insights Generated: ${aiInsightsResult ? 'Yes' : 'No'}`);
+      this.logger.log(`🎯 =========================================`);
+
       this.logger.log(`🎉 generateSummaryForTest completed for test ${testId}:`, {
         totalResults: results.length,
         results: results.map(r => ({ variant: r.variant, hasCompetitiveInsights: !!r.competitiveInsights }))
       });
 
-
       return {
         testId,
         results,
         message: `Successfully generated summary data for ${results.length} variants`,
+        // Additional debug information
+        debug: {
+          initialStatus: currentTest.status,
+          finalStatus: finalTest.status,
+          allVariationsComplete,
+          completionTriggered: completionResult.completed,
+          aiInsightsGenerated: !!aiInsightsResult,
+          variations: testVariations.map(v => ({
+            variation_type: v.variation_type,
+            prolific_status: v.prolific_status,
+            prolific_test_id: v.prolific_test_id
+          }))
+        }
       };
     } catch (error) {
-      this.logger.error(
-        `Failed to generate summary for test ${testId}:`,
-        error,
-      );
+      this.logger.error(`❌ ===== GENERATE SUMMARY FAILED FOR TEST ${testId} =====`, error);
       throw error;
     }
   }
+
 
 
   private async getSurveyResponsesForVariant(testId: string, variantType: string) {
@@ -377,11 +461,26 @@ export class InsightsService {
       }
 
       const formattedStatus = this.prolificService.formatStatus(study.status);
-      await this.testsService.updateTestVariationStatus(
-        formattedStatus,
-        testId,
-        variation,
-      );
+      
+      // Only update variation status if it's not already complete
+      // This prevents duplicate updates from N8N workflow
+      const currentVariation = await this.supabaseService.getByCondition<{ prolific_status: string }>({
+        tableName: TableName.TEST_VARIATIONS,
+        selectQuery: 'prolific_status',
+        condition: 'test_id = $1 AND variation_type = $2',
+        value: [testId, variation],
+        single: true,
+      });
+      
+      if (currentVariation?.prolific_status !== 'complete') {
+        await this.testsService.updateTestVariationStatus(
+          formattedStatus,
+          testId,
+          variation,
+        );
+      } else {
+        this.logger.log(`Variation ${variation} for test ${testId} is already complete, skipping status update`);
+      }
 
       const [test, testVariations] = await Promise.all([
         this.testsService.getRawDataByTestId(testId),
@@ -436,12 +535,36 @@ export class InsightsService {
 
       await this.saveInsightStatus(testId, variantChoosen.variation_type);
 
+      // Use centralized completion logic
+      const completionResult = await this.testsService.finalizeIfComplete(testId);
+      
+      let aiInsightsGenerated = false;
+      if (completionResult.completed) {
+        this.logger.log(`Test ${testId} completion finalized: status=${completionResult.testStatus}`);
+        
+        // Generate AI insights when test completes (only in InsightsService)
+        try {
+          this.logger.log(`Test ${testId} completed, generating AI insights...`);
+          await this.saveAiInsights(testId);
+          aiInsightsGenerated = true;
+          this.logger.log(`AI insights generated successfully for test ${testId}`);
+        } catch (error) {
+          this.logger.error(`Failed to generate AI insights for test ${testId}:`, error);
+          // Don't throw error - test completion should not fail if insights generation fails
+        }
+      } else {
+        this.logger.log(`Test ${testId} not ready for completion: ${completionResult.allVariationsComplete ? 'all variations complete but already finalized' : 'not all variations complete'}`);
+      }
+
       return {
         testId,
         variation,
         summaries: [savedSummary],
         purchaseDrivers: [variantPurchaseDrivers],
         competitiveInsights: variantCompetitiveInsights,
+        allVariationsComplete: completionResult.allVariationsComplete,
+        testStatus: completionResult.testStatus,
+        aiInsightsGenerated,
       };
     } catch (error) {
       this.logger.error(
