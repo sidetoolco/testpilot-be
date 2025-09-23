@@ -53,6 +53,8 @@ export class TestMonitoringProcessor extends WorkerHost {
       } else {
         this.logger.log(`Study ${studyId} is not yet completed (status: ${study.status}), sending reminder`);
         await this.emailService.sendTestCompletionReminder(studyId, testId);
+        // Trigger retry/backoff instead of silently completing the job
+        throw new Error(`Study ${studyId} not completed yet; retrying later via backoff`);
       }
     } catch (error) {
       this.logger.error(
