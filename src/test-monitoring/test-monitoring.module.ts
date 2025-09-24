@@ -6,7 +6,7 @@ import { TestMonitoringProcessor } from './test-monitoring.processor';
 import { EmailModule } from 'email/email.module';
 import { TestsModule } from 'tests/tests.module';
 
-const enableBullWorker = process.env.ENABLE_BULLMQ_WORKER === 'true' && process.env.REDIS_URL;
+const enableBullWorker = process.env.ENABLE_BULLMQ_WORKER === 'true' && Boolean(process.env.REDIS_URL);
 
 @Module({
   imports: [
