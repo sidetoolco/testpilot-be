@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
 @Injectable()
@@ -7,7 +7,7 @@ export class TestMonitoringService {
   private readonly logger = new Logger(TestMonitoringService.name);
 
   constructor(
-    @InjectQueue('test-completion') private readonly testCompletionQueue: Queue,
+    @Optional() @InjectQueue('test-completion') private readonly testCompletionQueue?: Queue,
   ) {}
 
   async scheduleTestCompletionCheck(
@@ -15,6 +15,12 @@ export class TestMonitoringService {
     testId: string,
     variationType: string,
   ) {
+    // Skip scheduling if Redis/BullMQ is not available (N8N handles completion)
+    if (!this.testCompletionQueue) {
+      this.logger.log(`Redis/BullMQ not available - skipping 24h monitoring for study ${studyId}. N8N will handle completion.`);
+      return;
+    }
+
     try {
       // Schedule the job to run after 24 hours
       await this.testCompletionQueue.add(

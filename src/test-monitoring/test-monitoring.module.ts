@@ -6,16 +6,24 @@ import { TestMonitoringProcessor } from './test-monitoring.processor';
 import { EmailModule } from 'email/email.module';
 import { TestsModule } from 'tests/tests.module';
 
+const enableBullWorker = process.env.ENABLE_BULLMQ_WORKER === 'true' && process.env.REDIS_URL;
+
 @Module({
   imports: [
-    BullModule.registerQueue({
-      name: 'test-completion',
-    }),
+    // Only register BullMQ queue if Redis is configured and worker is enabled
+    ...(enableBullWorker ? [
+      BullModule.registerQueue({
+        name: 'test-completion',
+      })
+    ] : []),
     ProlificModule,
     EmailModule,
     forwardRef(() => TestsModule)
   ],
-  providers: [TestMonitoringService, TestMonitoringProcessor],
+  providers: [
+    TestMonitoringService,
+    ...(enableBullWorker ? [TestMonitoringProcessor] : []),
+  ],
   exports: [TestMonitoringService],
 })
 export class TestMonitoringModule {}
