@@ -1738,6 +1738,7 @@ export class InsightsService {
       competitive_insights_a?: string;
       competitive_insights_b?: string;
       competitive_insights_c?: string;
+      competitive_insights_d?: string;
       recommendations?: string;
       comment_summary?: string;
       sendEmail?: boolean;

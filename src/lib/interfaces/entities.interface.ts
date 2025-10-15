@@ -16,7 +16,7 @@ export interface TestSummary {
   id: number;
   created_at: string;
   test_id: string;
-  variant_type: 'a' | 'b' | 'c';
+  variant_type: 'a' | 'b' | 'c' | 'd';
   share_of_buy: number;
   share_of_click: number;
   value_score: number;
@@ -126,6 +126,7 @@ export interface AiInsight {
   competitive_insights_a?: string;
   competitive_insights_b?: string;
   competitive_insights_c?: string;
+  competitive_insights_d?: string;
   recommendations: string;
   comment_summary?: string;
   sendEmail?: boolean;

@@ -41,6 +41,12 @@ export class UpdateInsightDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(10000)
+  competitive_insights_d?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10000)
   recommendations?: string;
 
   @IsOptional()

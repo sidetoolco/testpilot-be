@@ -614,6 +614,7 @@ export class TestsService {
         a: this.getVariationWithProduct(data.variations, 'a'),
         b: this.getVariationWithProduct(data.variations, 'b'),
         c: this.getVariationWithProduct(data.variations, 'c'),
+        d: this.getVariationWithProduct(data.variations, 'd'),
       },
       demographics: {
         ageRanges: data.demographics?.[0]?.age_ranges || [],
@@ -662,7 +663,7 @@ export class TestsService {
       variation_type: string;
       prolific_status: string | null;
     }>,
-    type: 'a' | 'b' | 'c',
+    type: 'a' | 'b' | 'c' | 'd',
   ): ProductWithProlificStatus | null {
     const variation = variations?.find((v) => v.variation_type === type);
     return variation

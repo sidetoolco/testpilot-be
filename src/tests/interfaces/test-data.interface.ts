@@ -32,7 +32,7 @@ export interface RawTestData {
       image_url: string;
       price: number;
     };
-    variation_type: 'a' | 'b' | 'c';
+    variation_type: 'a' | 'b' | 'c' | 'd';
     prolific_status: string | null;
   }>;
   demographics: Array<{
@@ -137,6 +137,7 @@ export interface TestData {
     a: ProductWithProlificStatus | null;
     b: ProductWithProlificStatus | null;
     c: ProductWithProlificStatus | null;
+    d: ProductWithProlificStatus | null;
   };
   demographics: {
     ageRanges: string[];
