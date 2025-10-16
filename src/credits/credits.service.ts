@@ -636,6 +636,7 @@ export class CreditsService {
     companyId: string,
     credits: number,
     description: string,
+    testId?: string,
   ): Promise<{ success: boolean; message: string; remaining_credits: number }> {
     try {
       // Get current available credits
@@ -648,13 +649,41 @@ export class CreditsService {
         );
       }
 
+      // Calculate remaining credits
+      const remainingCredits = currentCredits - credits;
+
+      // Update company credits balance
+      const existingCredits = await this.supabaseService.findMany<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { company_id: companyId },
+        'id, total'
+      );
+
+      if (existingCredits && existingCredits.length > 0) {
+        // Update existing record
+        await this.supabaseService.update<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          { total: remainingCredits },
+          [{ key: 'company_id', value: companyId }],
+        );
+      } else {
+        // Create new record
+        await this.supabaseService.insert<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          {
+            company_id: companyId,
+            total: remainingCredits,
+          }
+        );
+      }
+
       // Create a credit usage record to track the deduction
       const creditUsage = await this.supabaseService.insert<CreditUsage>(
         TableName.CREDIT_USAGE,
         {
           company_id: companyId,
           credits_used: credits,
-          test_id: null, // This is a manual deduction, not tied to a specific test
+          test_id: testId || null, // Link to test if provided
           created_at: new Date().toISOString(),
         }
       );
@@ -662,9 +691,6 @@ export class CreditsService {
       if (!creditUsage || creditUsage.length === 0) {
         throw new InternalServerErrorException('Failed to record credit deduction');
       }
-
-      // Calculate remaining credits
-      const remainingCredits = currentCredits - credits;
 
       return {
         success: true,

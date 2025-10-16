@@ -514,10 +514,12 @@ export class TestsService {
         }
       }
       
-      await this.creditsService.saveCreditUsage(
+      // Deduct credits from company balance
+      await this.creditsService.deductCredits(
         test.company_id,
-        testId,
         requiredCredits,
+        `Test publication: ${testId}`,
+        testId,
       );
 
       // Update test status to "active" after successful publish
