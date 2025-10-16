@@ -547,7 +547,26 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      // Calculate total from completed payments minus usage
+      this.logger.log(`Getting available credits for company: ${companyId}`);
+      
+      // Get credits directly from COMPANY_CREDITS table (source of truth)
+      const companyCredits = await this.supabaseService.findMany<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { company_id: companyId },
+        'id, total, created_at, updated_at'
+      );
+
+      this.logger.log(`Found ${companyCredits.length} company_credits records for company ${companyId}`);
+
+      if (companyCredits && companyCredits.length > 0) {
+        const total = companyCredits[0].total || 0;
+        this.logger.log(`Company ${companyId} credits from COMPANY_CREDITS table: ${total} (record ID: ${companyCredits[0].id})`);
+        return total;
+      }
+
+      // Fallback: Calculate from payments minus usage if no COMPANY_CREDITS record exists
+      this.logger.log(`No COMPANY_CREDITS record found for company ${companyId}, calculating from payments`);
+      
       const completedPayments = await this.supabaseService.findMany<CreditPayment>(
         TableName.CREDIT_PAYMENTS,
         { company_id: companyId, status: PaymentStatus.COMPLETED },
@@ -556,7 +575,7 @@ export class CreditsService {
 
       const totalPurchased = completedPayments.reduce((sum, payment) => sum + payment.credits_purchased, 0);
 
-      // Get credit usage (if credit_usage table exists)
+      // Get credit usage
       let totalUsed = 0;
       try {
         const creditUsage = await this.supabaseService.findMany<CreditUsage>(
@@ -566,7 +585,6 @@ export class CreditsService {
         );
         totalUsed = creditUsage.reduce((sum, usage) => sum + usage.credits_used, 0);
       } catch (error) {
-        // Credit usage table might not exist, ignore
         this.logger.log(`Credit usage table not found for company ${companyId}, assuming 0 usage`);
       }
 
