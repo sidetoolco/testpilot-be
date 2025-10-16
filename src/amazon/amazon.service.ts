@@ -102,8 +102,6 @@ export class AmazonService {
     url.searchParams.append('country', 'US');
     url.searchParams.append('tld', 'com');
     url.searchParams.append('asin', asin);
-    url.searchParams.append('render', 'true'); // Enable JavaScript rendering
-    url.searchParams.append('wait', '3'); // Wait for content to load
     
     return this.scraperHttpClient.get<ProductDetail>(url.pathname + url.search);
   }
