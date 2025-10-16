@@ -622,4 +622,62 @@ export class CreditsService {
       throw error;
     }
   }
+
+  /**
+   * Deducts credits from a company's account for user-initiated actions
+   * @param companyId - The unique identifier of the company
+   * @param credits - The number of credits to deduct
+   * @param description - Description of the credit deduction
+   * @returns Promise<{ success: boolean; message: string; remaining_credits: number }>
+   * @throws BadRequestException - When insufficient credits or invalid request
+   * @throws InternalServerErrorException - When database operations fail
+   */
+  public async deductCredits(
+    companyId: string,
+    credits: number,
+    description: string,
+  ): Promise<{ success: boolean; message: string; remaining_credits: number }> {
+    try {
+      // Get current available credits
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      
+      // Check if company has sufficient credits
+      if (currentCredits < credits) {
+        throw new BadRequestException(
+          `Insufficient credits. Available: ${currentCredits}, Required: ${credits}`
+        );
+      }
+
+      // Create a credit usage record to track the deduction
+      const creditUsage = await this.supabaseService.insert<CreditUsage>(
+        TableName.CREDIT_USAGE,
+        {
+          company_id: companyId,
+          credits_used: credits,
+          test_id: null, // This is a manual deduction, not tied to a specific test
+          created_at: new Date().toISOString(),
+        }
+      );
+
+      if (!creditUsage || creditUsage.length === 0) {
+        throw new InternalServerErrorException('Failed to record credit deduction');
+      }
+
+      // Calculate remaining credits
+      const remainingCredits = currentCredits - credits;
+
+      return {
+        success: true,
+        message: 'Credits deducted successfully',
+        remaining_credits: remainingCredits,
+      };
+
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new InternalServerErrorException('Failed to deduct credits');
+    }
+  }
 }
