@@ -565,8 +565,6 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      this.logger.log(`Getting available credits for company: ${companyId}`);
-      
       // Get credits directly from COMPANY_CREDITS table (source of truth)
       const companyCredits = await this.supabaseService.findMany<CompanyCredits>(
         TableName.COMPANY_CREDITS,
@@ -574,17 +572,11 @@ export class CreditsService {
         'id, total, created_at, updated_at'
       );
 
-      this.logger.log(`Found ${companyCredits.length} company_credits records for company ${companyId}`);
-
       if (companyCredits && companyCredits.length > 0) {
-        const total = companyCredits[0].total || 0;
-        this.logger.log(`Company ${companyId} credits from COMPANY_CREDITS table: ${total} (record ID: ${companyCredits[0].id})`);
-        return total;
+        return companyCredits[0].total || 0;
       }
 
       // Fallback: Calculate from payments minus usage if no COMPANY_CREDITS record exists
-      this.logger.log(`No COMPANY_CREDITS record found for company ${companyId}, calculating from payments`);
-      
       const completedPayments = await this.supabaseService.findMany<CreditPayment>(
         TableName.CREDIT_PAYMENTS,
         { company_id: companyId, status: PaymentStatus.COMPLETED },
@@ -603,14 +595,10 @@ export class CreditsService {
         );
         totalUsed = creditUsage.reduce((sum, usage) => sum + usage.credits_used, 0);
       } catch (error) {
-        this.logger.log(`Credit usage table not found for company ${companyId}, assuming 0 usage`);
+        // Credit usage table might not exist, ignore
       }
 
-      const calculatedTotal = totalPurchased - totalUsed;
-      
-      this.logger.log(`Company ${companyId}: ${totalPurchased} purchased - ${totalUsed} used = ${calculatedTotal} available`);
-      
-      return calculatedTotal;
+      return totalPurchased - totalUsed;
     } catch (error) {
       this.logger.error('Error checking company credits:', error);
       throw new InternalServerErrorException('Failed to check company credits');
