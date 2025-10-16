@@ -7,12 +7,14 @@ import {
   Post,
   Query,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { CreditsService } from './credits.service';
 import { UsersService } from 'users/users.service';
 import { CurrentUser } from 'auth/decorators';
 import { JwtAuthGuard, AdminGuard } from 'auth/guards';
-import { EditCreditsDto } from './dto';
+import { EditCreditsDto, CreditDeductionRequestDto, CreditDeductionResponseDto } from './dto';
 
 @Controller('credits')
 @UseGuards(JwtAuthGuard)
@@ -94,5 +96,24 @@ export class CreditsController {
     }
 
     return await this.creditsService.processPendingPayments(companyId);
+  }
+
+  @Post('deduct')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async deductCredits(
+    @Body() request: CreditDeductionRequestDto,
+    @CurrentUser('id') userId: string,
+  ): Promise<CreditDeductionResponseDto> {
+    const companyId = await this.usersService.getUserCompanyId(userId);
+    
+    if (!companyId) {
+      throw new BadRequestException('Company not found');
+    }
+
+    return await this.creditsService.deductCredits(
+      companyId,
+      request.credits,
+      request.description,
+    );
   }
 }

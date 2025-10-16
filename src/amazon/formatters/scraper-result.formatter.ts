@@ -11,7 +11,7 @@ export const formatScraperResult = (results: Result[], searchTerm: string) => {
         title: item.name || '',
         price: item.price || 0,
         rating: item.stars || 0,
-        reviews_count: item.total_reviews || 0,
+        reviews_count: item.total_reviews || 0, // Will be updated with real data from product page API
         image_url: item.image || '',
         product_url: item.url || '',
         search_term: searchTerm,

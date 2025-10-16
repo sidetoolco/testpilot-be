@@ -622,4 +622,90 @@ export class CreditsService {
       throw error;
     }
   }
+
+  /**
+   * Deducts credits from a company's account for user-initiated actions
+   * @param companyId - The unique identifier of the company
+   * @param credits - The number of credits to deduct
+   * @param description - Description of the credit deduction
+   * @returns Promise<{ success: boolean; message: string; remaining_credits: number }>
+   * @throws BadRequestException - When insufficient credits or invalid request
+   * @throws InternalServerErrorException - When database operations fail
+   */
+  public async deductCredits(
+    companyId: string,
+    credits: number,
+    description: string,
+    testId?: string,
+  ): Promise<{ success: boolean; message: string; remaining_credits: number }> {
+    try {
+      // Get current available credits
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+      
+      // Check if company has sufficient credits
+      if (currentCredits < credits) {
+        throw new BadRequestException(
+          `Insufficient credits. Available: ${currentCredits}, Required: ${credits}`
+        );
+      }
+
+      // Calculate remaining credits
+      const remainingCredits = currentCredits - credits;
+
+      // Update company credits balance
+      const existingCredits = await this.supabaseService.findMany<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { company_id: companyId },
+        'id, total'
+      );
+
+      if (existingCredits && existingCredits.length > 0) {
+        // Update existing record
+        await this.supabaseService.update<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          { total: remainingCredits },
+          [{ key: 'company_id', value: companyId }],
+        );
+      } else {
+        // Create new record
+        await this.supabaseService.insert<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          {
+            company_id: companyId,
+            total: remainingCredits,
+          }
+        );
+      }
+
+      // Create a credit usage record to track the deduction
+      const creditUsage = await this.supabaseService.insert<CreditUsage>(
+        TableName.CREDIT_USAGE,
+        {
+          company_id: companyId,
+          credits_used: credits,
+          test_id: testId || null, // Link to test if provided
+          created_at: new Date().toISOString(),
+        }
+      );
+
+      if (!creditUsage || creditUsage.length === 0) {
+        throw new InternalServerErrorException('Failed to record credit deduction');
+      }
+
+      return {
+        success: true,
+        message: 'Credits deducted successfully',
+        remaining_credits: remainingCredits,
+      };
+
+    } catch (error) {
+      this.logger.error('Failed to deduct credits', error);
+      
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new InternalServerErrorException('Failed to deduct credits', { cause: error as Error });
+    }
+  }
 }
