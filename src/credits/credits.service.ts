@@ -458,12 +458,30 @@ export class CreditsService {
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
       const newTotal = currentCredits + creditsToAdd;
 
-      // Update company credits
-      await this.supabaseService.update<CompanyCredits>(
+      // Check if company_credits record exists, if not create it, otherwise update it
+      const existingCredits = await this.supabaseService.findMany<CompanyCredits>(
         TableName.COMPANY_CREDITS,
-        { total: newTotal },
-        [{ key: 'company_id', value: companyId }],
+        { company_id: companyId },
+        'id, total'
       );
+
+      if (existingCredits && existingCredits.length > 0) {
+        // Update existing record
+        await this.supabaseService.update<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          { total: newTotal },
+          [{ key: 'company_id', value: companyId }],
+        );
+      } else {
+        // Create new record
+        await this.supabaseService.insert<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          {
+            company_id: companyId,
+            total: newTotal,
+          }
+        );
+      }
 
       this.logger.log(`Added ${creditsToAdd} credits to company ${companyId}. New balance: ${newTotal}`);
       return newTotal;
@@ -547,7 +565,18 @@ export class CreditsService {
    */
   public async getCompanyAvailableCredits(companyId: string): Promise<number> {
     try {
-      // Calculate total from completed payments minus usage
+      // Get credits directly from COMPANY_CREDITS table (source of truth)
+      const companyCredits = await this.supabaseService.findMany<CompanyCredits>(
+        TableName.COMPANY_CREDITS,
+        { company_id: companyId },
+        'id, total, created_at, updated_at'
+      );
+
+      if (companyCredits && companyCredits.length > 0) {
+        return companyCredits[0].total || 0;
+      }
+
+      // Fallback: Calculate from payments minus usage if no COMPANY_CREDITS record exists
       const completedPayments = await this.supabaseService.findMany<CreditPayment>(
         TableName.CREDIT_PAYMENTS,
         { company_id: companyId, status: PaymentStatus.COMPLETED },
@@ -556,7 +585,7 @@ export class CreditsService {
 
       const totalPurchased = completedPayments.reduce((sum, payment) => sum + payment.credits_purchased, 0);
 
-      // Get credit usage (if credit_usage table exists)
+      // Get credit usage
       let totalUsed = 0;
       try {
         const creditUsage = await this.supabaseService.findMany<CreditUsage>(
@@ -567,14 +596,9 @@ export class CreditsService {
         totalUsed = creditUsage.reduce((sum, usage) => sum + usage.credits_used, 0);
       } catch (error) {
         // Credit usage table might not exist, ignore
-        this.logger.log(`Credit usage table not found for company ${companyId}, assuming 0 usage`);
       }
 
-      const calculatedTotal = totalPurchased - totalUsed;
-      
-      this.logger.log(`Company ${companyId}: ${totalPurchased} purchased - ${totalUsed} used = ${calculatedTotal} available`);
-      
-      return calculatedTotal;
+      return totalPurchased - totalUsed;
     } catch (error) {
       this.logger.error('Error checking company credits:', error);
       throw new InternalServerErrorException('Failed to check company credits');
