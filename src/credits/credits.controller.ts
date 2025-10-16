@@ -7,6 +7,8 @@ import {
   Post,
   Query,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { CreditsService } from './credits.service';
 import { UsersService } from 'users/users.service';
@@ -97,27 +99,17 @@ export class CreditsController {
   }
 
   @Post('deduct')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async deductCredits(
     @Body() request: CreditDeductionRequestDto,
     @CurrentUser('id') userId: string,
   ): Promise<CreditDeductionResponseDto> {
-    // Get user's company ID
     const companyId = await this.usersService.getUserCompanyId(userId);
     
     if (!companyId) {
       throw new BadRequestException('Company not found');
     }
 
-    // Validate request
-    if (!request.credits || request.credits <= 0) {
-      throw new BadRequestException('Credits must be a positive number');
-    }
-
-    if (!request.description || request.description.trim().length === 0) {
-      throw new BadRequestException('Description is required');
-    }
-
-    // Deduct credits
     return await this.creditsService.deductCredits(
       companyId,
       request.credits,

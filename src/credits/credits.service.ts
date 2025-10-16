@@ -673,11 +673,13 @@ export class CreditsService {
       };
 
     } catch (error) {
+      this.logger.error('Failed to deduct credits', error);
+      
       if (error instanceof BadRequestException) {
         throw error;
       }
       
-      throw new InternalServerErrorException('Failed to deduct credits');
+      throw new InternalServerErrorException('Failed to deduct credits', { cause: error as Error });
     }
   }
 }
