@@ -458,12 +458,30 @@ export class CreditsService {
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
       const newTotal = currentCredits + creditsToAdd;
 
-      // Update company credits
-      await this.supabaseService.update<CompanyCredits>(
+      // Check if company_credits record exists, if not create it, otherwise update it
+      const existingCredits = await this.supabaseService.findMany<CompanyCredits>(
         TableName.COMPANY_CREDITS,
-        { total: newTotal },
-        [{ key: 'company_id', value: companyId }],
+        { company_id: companyId },
+        'id, total'
       );
+
+      if (existingCredits && existingCredits.length > 0) {
+        // Update existing record
+        await this.supabaseService.update<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          { total: newTotal },
+          [{ key: 'company_id', value: companyId }],
+        );
+      } else {
+        // Create new record
+        await this.supabaseService.insert<CompanyCredits>(
+          TableName.COMPANY_CREDITS,
+          {
+            company_id: companyId,
+            total: newTotal,
+          }
+        );
+      }
 
       this.logger.log(`Added ${creditsToAdd} credits to company ${companyId}. New balance: ${newTotal}`);
       return newTotal;
