@@ -31,8 +31,8 @@ export class AmazonService {
         product.asin,
       );
 
-      // Check if product already exists by ASIN
-      const existingProduct = await this.supabaseService.findOne<AmazonProduct>(
+      // Check if product already exists by ASIN and company_id
+      const existingProducts = await this.supabaseService.findMany(
         TableName.AMAZON_PRODUCTS,
         { asin: product.asin, company_id: companyId },
         'id, asin, title, price, rating, reviews_count, image_url, product_url, updated_at'
@@ -40,9 +40,10 @@ export class AmazonService {
 
       let savedProduct;
 
-      if (existingProduct) {
-        // Update existing product
-        const updatedProduct = await this.supabaseService.update(
+      if (existingProducts && existingProducts.length > 0) {
+        // Update existing product - use the first match
+        const existingProduct = existingProducts[0] as any;
+        await this.supabaseService.update(
           TableName.AMAZON_PRODUCTS,
           {
             title: product.title,
@@ -55,12 +56,12 @@ export class AmazonService {
             images,
             updated_at: new Date().toISOString(),
           },
-          [{ key: 'id' as any, value: (existingProduct as any).id }]
+          [{ key: 'id' as any, value: existingProduct.id }]
         );
-        savedProduct = [updatedProduct];
+        savedProduct = existingProduct;
       } else {
         // Insert new product
-        const newProduct = await this.supabaseService.insert(
+        const newProducts = await this.supabaseService.insert(
           TableName.AMAZON_PRODUCTS,
           {
             ...product,
@@ -69,10 +70,10 @@ export class AmazonService {
             company_id: companyId,
           }
         );
-        savedProduct = newProduct;
+        savedProduct = newProducts[0];
       }
 
-      savedProducts.push(...savedProduct);
+      savedProducts.push(savedProduct);
     }
 
     return await this.saveProductsInCompetitorTable(testId, savedProducts);
@@ -143,14 +144,14 @@ export class AmazonService {
   ) {
     const dto = competitors.map((competitor) => ({
       test_id: testId,
-      product_id: (competitor as any).id, // Cast to any to handle the id field
+      product_id: competitor.id,
       product_type: 'amazon_product', // Set correct product type for Amazon
     }));
 
-    // Check if any of these products are already linked to this test
+    // Check if any of these products are already linked to this test (filter by product_type too)
     const existingLinks = await this.supabaseService.findMany(
       TableName.TEST_COMPETITORS,
-      { test_id: testId },
+      { test_id: testId, product_type: 'amazon_product' },
       'product_id'
     );
 
@@ -159,10 +160,21 @@ export class AmazonService {
     // Filter out products that are already linked to this test
     const newLinks = dto.filter(link => !existingProductIds.has(link.product_id));
 
-    if (newLinks.length === 0) {
-      return { message: 'All products are already linked to this test' };
+    // Deduplicate within the current request to avoid duplicate inserts
+    const uniqueNewLinks = [];
+    const seen = new Set<string>();
+    for (const link of newLinks) {
+      if (!seen.has(link.product_id)) {
+        seen.add(link.product_id);
+        uniqueNewLinks.push(link);
+      }
     }
 
-    return await this.supabaseService.insert(TableName.TEST_COMPETITORS, newLinks);
+    // Return empty array for consistency (not a different shape)
+    if (uniqueNewLinks.length === 0) {
+      return [];
+    }
+
+    return await this.supabaseService.insert(TableName.TEST_COMPETITORS, uniqueNewLinks);
   }
 }

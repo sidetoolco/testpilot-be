@@ -341,14 +341,14 @@ export class WalmartService {
       
       const dto = competitors.map((competitor) => ({
         test_id: testId,
-        product_id: (competitor as any).id, // Use the database UUID from the saved product
+        product_id: competitor.id,
         product_type: 'walmart_product', // Set correct product type for Walmart
       }));
 
-      // Check if any of these products are already linked to this test
+      // Check if any of these products are already linked to this test (filter by product_type too)
       const existingLinks = await this.supabaseService.findMany(
         TableName.TEST_COMPETITORS,
-        { test_id: testId },
+        { test_id: testId, product_type: 'walmart_product' },
         'product_id'
       );
 
@@ -357,14 +357,25 @@ export class WalmartService {
       // Filter out products that are already linked to this test
       const newLinks = dto.filter(link => !existingProductIds.has(link.product_id));
 
-      if (newLinks.length === 0) {
-        console.log('All products are already linked to this test');
-        return { message: 'All products are already linked to this test' };
+      // Deduplicate within the current request to avoid duplicate inserts
+      const uniqueNewLinks = [];
+      const seen = new Set<string>();
+      for (const link of newLinks) {
+        if (!seen.has(link.product_id)) {
+          seen.add(link.product_id);
+          uniqueNewLinks.push(link);
+        }
       }
 
-      console.log(`Inserting ${newLinks.length} new competitor relationships (${dto.length - newLinks.length} already exist)`);
+      // Return empty array for consistency (not a different shape)
+      if (uniqueNewLinks.length === 0) {
+        console.log('All products are already linked to this test');
+        return [];
+      }
 
-      const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, newLinks);
+      console.log(`Inserting ${uniqueNewLinks.length} new competitor relationships (${dto.length - uniqueNewLinks.length} already exist or duplicates)`);
+
+      const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, uniqueNewLinks);
       console.log(`Successfully inserted ${result.length} competitors to test_competitors table with product_type: walmart_product`);
       
       return result;
