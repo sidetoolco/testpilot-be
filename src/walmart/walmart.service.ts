@@ -341,11 +341,30 @@ export class WalmartService {
       
       const dto = competitors.map((competitor) => ({
         test_id: testId,
-        product_id: competitor.id, // Use the database UUID from the saved product
+        product_id: (competitor as any).id, // Use the database UUID from the saved product
         product_type: 'walmart_product', // Set correct product type for Walmart
       }));
 
-      const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, dto);
+      // Check if any of these products are already linked to this test
+      const existingLinks = await this.supabaseService.findMany(
+        TableName.TEST_COMPETITORS,
+        { test_id: testId },
+        'product_id'
+      );
+
+      const existingProductIds = new Set(existingLinks.map(link => (link as any).product_id));
+      
+      // Filter out products that are already linked to this test
+      const newLinks = dto.filter(link => !existingProductIds.has(link.product_id));
+
+      if (newLinks.length === 0) {
+        console.log('All products are already linked to this test');
+        return { message: 'All products are already linked to this test' };
+      }
+
+      console.log(`Inserting ${newLinks.length} new competitor relationships (${dto.length - newLinks.length} already exist)`);
+
+      const result = await this.supabaseService.insert(TableName.TEST_COMPETITORS, newLinks);
       console.log(`Successfully inserted ${result.length} competitors to test_competitors table with product_type: walmart_product`);
       
       return result;
