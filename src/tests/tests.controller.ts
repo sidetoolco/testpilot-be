@@ -79,9 +79,13 @@ export class TestsController {
   @Post('/:testId/publish')
   @HttpCode(HttpStatus.OK)
   async publishTest(@Param('testId') testId: string) {
-    await this.testsService.publishTest(testId);
+    const variations = await this.testsService.publishTest(testId);
 
-    return { success: true, message: 'Test published successfully' };
+    return { 
+      success: true, 
+      message: 'Test published successfully',
+      variations 
+    };
   }
 
   @Post('/block')

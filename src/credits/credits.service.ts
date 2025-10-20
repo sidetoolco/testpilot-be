@@ -686,7 +686,8 @@ export class CreditsService {
     testId?: string,
   ): Promise<{ success: boolean; message: string; remaining_credits: number }> {
     try {
-      // Check for duplicate deduction if testId is provided
+      // Application-level idempotency check (fallback if DB constraint not added yet)
+      // NOTE: Best practice is to add unique constraint on (company_id, test_id) for true atomicity
       if (testId) {
         const existingUsage = await this.supabaseService.findMany<CreditUsage>(
           TableName.CREDIT_USAGE,
@@ -695,7 +696,7 @@ export class CreditsService {
         );
         
         if (existingUsage && existingUsage.length > 0) {
-          this.logger.warn(`Credits already deducted for test ${testId}, skipping duplicate deduction`);
+          this.logger.warn(`Credits already deducted for test ${testId} (app-level check)`);
           const currentCredits = await this.getCompanyAvailableCredits(companyId);
           return {
             success: true,
@@ -704,7 +705,7 @@ export class CreditsService {
           };
         }
       }
-      
+
       // Get current available credits
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
       
@@ -715,24 +716,34 @@ export class CreditsService {
         );
       }
 
-      // Calculate remaining credits after deduction
-      const remainingCredits = currentCredits - credits;
-
       // Create a credit usage record to track the deduction
       // NOTE: The database trigger will automatically deduct from company_credits.total
-      // when this record is inserted, so we DON'T manually update company_credits
-      const creditUsage = await this.supabaseService.insert<CreditUsage>(
-        TableName.CREDIT_USAGE,
-        {
-          company_id: companyId,
-          credits_used: credits,
-          test_id: testId || null, // Link to test if provided
-          created_at: new Date().toISOString(),
-        }
-      );
+      try {
+        const creditUsage = await this.supabaseService.insert<CreditUsage>(
+          TableName.CREDIT_USAGE,
+          {
+            company_id: companyId,
+            credits_used: credits,
+            test_id: testId || null,
+            created_at: new Date().toISOString(),
+          }
+        );
 
-      if (!creditUsage || creditUsage.length === 0) {
-        throw new InternalServerErrorException('Failed to record credit deduction');
+        if (!creditUsage || creditUsage.length === 0) {
+          throw new InternalServerErrorException('Failed to record credit deduction');
+        }
+      } catch (error) {
+        // If unique constraint exists and is violated, handle gracefully
+        if (error.code === '23505' || error.message?.includes('duplicate key')) {
+          this.logger.warn(`Credits already deducted for test ${testId} (DB constraint)`);
+          const currentCredits = await this.getCompanyAvailableCredits(companyId);
+          return {
+            success: true,
+            message: 'Credits were already deducted for this test',
+            remaining_credits: currentCredits,
+          };
+        }
+        throw error;
       }
 
       // Get the actual balance after the trigger has run

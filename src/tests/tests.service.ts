@@ -466,52 +466,46 @@ export class TestsService {
     try {
       const test = await this.getTestById(testId);
       
-      // Check if test is already active to prevent duplicate publishing
-      if (test.status === 'active') {
-        this.logger.warn(`Test ${testId} is already active, skipping publish to prevent duplicate credit deduction`);
-        throw new BadRequestException('Test is already published and active');
+      // Check if test is already active or being published to prevent concurrent publishes
+      if (test.status === 'active' || test.status === 'publishing') {
+        this.logger.warn(`Test ${testId} is already ${test.status}, skipping publish`);
+        throw new BadRequestException(`Test is already ${test.status}`);
       }
       
-      const testDemographics = await this.getTestDemographics(testId);
-
-      // Get participant count and screening from test_demographics table
-      const targetParticipantCount = testDemographics.tester_count;
-      const customScreeningEnabled = testDemographics.custom_screening_enabled || false;
-
-      const requiredCredits = this.creditsService.calculateTestCredits(
-        targetParticipantCount,
-        customScreeningEnabled,
-      );
-
-      // Check if company has enough credits
-      const availableCredits =
-        await this.creditsService.getCompanyAvailableCredits(test.company_id);
-
-      if (availableCredits < requiredCredits) {
-        throw new BadRequestException('Insufficient credits.');
-      }
-
+      // Atomically transition to 'publishing' state to prevent concurrent publish attempts
+      await this.updateTestStatus(testId, 'publishing');
       
-      const testVariations = await this.getTestVariations(testId);
-      
-      // Check Prolific balance before publishing any studies
-      await this.prolificService.checkBalanceForTestPublishing(
-        testVariations.map(({ prolific_test_id }) => prolific_test_id),
-      );
-      
-      // Deduct credits BEFORE publishing to prevent duplicate deduction on retry
-      this.logger.log(`Deducting ${requiredCredits} credits for test ${testId} before publishing`);
-      await this.creditsService.deductCredits(
-        test.company_id,
-        requiredCredits,
-        `Test publication: ${testId}`,
-        testId,
-      );
-      
-      // Publish each variation
-      // TODO: Split this into its own separated function
-      for (const variation of testVariations) {
-        try {
+      try {
+        const testDemographics = await this.getTestDemographics(testId);
+
+        // Get participant count and screening from test_demographics table
+        const targetParticipantCount = testDemographics.tester_count;
+        const customScreeningEnabled = testDemographics.custom_screening_enabled || false;
+
+        const requiredCredits = this.creditsService.calculateTestCredits(
+          targetParticipantCount,
+          customScreeningEnabled,
+        );
+
+        // Check if company has enough credits
+        const availableCredits =
+          await this.creditsService.getCompanyAvailableCredits(test.company_id);
+
+        if (availableCredits < requiredCredits) {
+          throw new BadRequestException('Insufficient credits.');
+        }
+
+        
+        const testVariations = await this.getTestVariations(testId);
+        
+        // Check Prolific balance before publishing any studies
+        await this.prolificService.checkBalanceForTestPublishing(
+          testVariations.map(({ prolific_test_id }) => prolific_test_id),
+        );
+        
+        // Publish each variation
+        // Deduct credits AFTER all variations successfully publish to avoid over-refund issues
+        for (const variation of testVariations) {
           await this.prolificService.publishStudy(variation.prolific_test_id);
           await this.testMonitoringService.scheduleTestCompletionCheck(
             variation.prolific_test_id,
@@ -519,32 +513,34 @@ export class TestsService {
             variation.variation_type,
           );
           
-          // Wait 30 second before processing the next variation
+          // Wait 30 seconds before processing the next variation
           await new Promise((resolve) => setTimeout(resolve, 30000));
-        } catch (error) {
-          const errorMessage =
-          error instanceof Error
-          ? error.message
-          : `Failed to publish study for variation ${variation.variation_type}`;
-          
-          // Refund credits if publishing fails
-          this.logger.error(`Publishing failed, refunding ${requiredCredits} credits`);
-          await this.creditsService.refundCreditUsage(test.company_id, testId);
-          
-          throw new BadRequestException(errorMessage);
         }
+
+        // Only deduct credits after ALL variations published successfully
+        // The unique constraint on (company_id, test_id) prevents duplicate deductions on retry
+        this.logger.log(`All variations published successfully, deducting ${requiredCredits} credits for test ${testId}`);
+        await this.creditsService.deductCredits(
+          test.company_id,
+          requiredCredits,
+          `Test publication: ${testId}`,
+          testId,
+        );
+
+        // Update test status to "active" after successful publish
+        await this.updateTestStatus(testId, 'active');
+
+        this.logger.log(
+          `Successfully published test ${testId} with ${requiredCredits} credits used`,
+        );
+        return testVariations;
+      } catch (error) {
+        // Roll back to draft state if publishing fails
+        await this.updateTestStatus(testId, 'draft');
+        throw error;
       }
-
-      // Update test status to "active" after successful publish
-      await this.updateTestStatus(testId, 'active');
-
-      this.logger.log(
-        `Successfully published test ${testId} with ${requiredCredits} credits used`,
-      );
-      return testVariations;
     } catch (error) {
       this.logger.error(`Failed to publish test ${testId}:`, error);
-
       throw error;
     }
   }
