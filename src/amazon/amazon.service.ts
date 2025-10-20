@@ -16,7 +16,23 @@ export class AmazonService {
 
   public async queryAmazonProducts(searchTerm: string) {
     const { results } = await this.queryProductsFromApi(searchTerm);
-    return formatScraperResult(results, searchTerm);
+    const formattedResults = formatScraperResult(results, searchTerm);
+    
+    const enrichedResults = await Promise.all(
+      formattedResults.map(async (product) => {
+        try {
+          const productDetail = await this.getProductDetail(product.asin);
+          return {
+            ...product,
+            reviews_count: productDetail.total_reviews || 0,
+          };
+        } catch (error) {
+          return product;
+        }
+      })
+    );
+    
+    return enrichedResults;
   }
 
   public async saveAmazonProducts(
