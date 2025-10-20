@@ -7,7 +7,9 @@ import {
   IsString,
   IsUrl,
   ValidateNested,
+  IsOptional,
 } from 'class-validator';
+import { Review } from '../interfaces/product-detail.interface';
 
 export class AmazonProduct {
   @IsString()
@@ -33,6 +35,10 @@ export class AmazonProduct {
 
   @IsString()
   title: string;
+
+  @IsOptional()
+  @IsArray()
+  reviews?: Review[];
 }
 
 export class SaveAmazonProductsDto {

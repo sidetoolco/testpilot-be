@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ScraperHttpClient } from './scraper-http.client';
-import { ScraperResponse } from './interfaces';
+import { ScraperResponse, ProductDetail, ReviewsResponse } from './interfaces';
 import { formatScraperResult } from './formatters';
 import { AmazonProduct } from './dto';
-import { ProductDetail } from './interfaces/product-detail.interface';
 import { SupabaseService } from 'supabase/supabase.service';
 import { TableName } from 'lib/enums';
 
@@ -43,16 +42,17 @@ export class AmazonService {
     let savedProducts = [];
 
     for (const product of products) {
-      const { feature_bullets, images } = await this.getProductDetail(
-        product.asin,
-      );
+      const productDetail = await this.getProductDetail(product.asin);
+      
+      const last10Reviews = (productDetail.reviews || []).slice(0, 10);
 
       const savedProduct = await this.supabaseService.insert<AmazonProduct>(
         TableName.AMAZON_PRODUCTS,
         {
           ...product,
-          bullet_points: feature_bullets,
-          images,
+          bullet_points: productDetail.feature_bullets,
+          images: productDetail.images,
+          reviews: last10Reviews,
           company_id: companyId,
         },
       );
@@ -83,16 +83,17 @@ export class AmazonService {
         continue;
       }
 
-      const { feature_bullets, images } = await this.getProductDetail(
-        product.asin,
-      );
+      const productDetail = await this.getProductDetail(product.asin);
+      
+      const last10Reviews = (productDetail.reviews || []).slice(0, 10);
 
       const savedProduct = await this.supabaseService.insert<AmazonProduct>(
         TableName.AMAZON_PRODUCTS,
         {
           ...product,
-          bullet_points: feature_bullets,
-          images,
+          bullet_points: productDetail.feature_bullets,
+          images: productDetail.images,
+          reviews: last10Reviews,
           company_id: companyId,
         },
       );
@@ -120,6 +121,55 @@ export class AmazonService {
     url.searchParams.append('asin', asin);
     
     return this.scraperHttpClient.get<ProductDetail>(url.pathname + url.search);
+  }
+
+  public async getSavedProduct(id: string) {
+    return this.supabaseService.findOne<AmazonProduct>(
+      TableName.AMAZON_PRODUCTS,
+      { id },
+    );
+  }
+
+  public async getProductReviews(productId: string): Promise<ReviewsResponse> {
+    const product = await this.getSavedProduct(productId);
+    
+    if (!product || !product.asin) {
+      throw new Error('Product not found or missing ASIN');
+    }
+
+    if (product.reviews && product.reviews.length > 0) {
+      return {
+        product_name: product.title,
+        asin: product.asin,
+        average_rating: product.rating,
+        total_reviews: product.reviews_count,
+        rating_breakdown: {
+          five_star: 0,
+          four_star: 0,
+          three_star: 0,
+          two_star: 0,
+          one_star: 0,
+        },
+        reviews: product.reviews,
+      };
+    }
+
+    const productDetail = await this.getProductDetail(product.asin);
+    
+    return {
+      product_name: productDetail.name,
+      asin: product.asin,
+      average_rating: productDetail.average_rating,
+      total_reviews: productDetail.total_reviews,
+      rating_breakdown: {
+        five_star: productDetail['5_star_percentage'] || 0,
+        four_star: productDetail['4_star_percentage'] || 0,
+        three_star: productDetail['3_star_percentage'] || 0,
+        two_star: productDetail['2_star_percentage'] || 0,
+        one_star: productDetail['1_star_percentage'] || 0,
+      },
+      reviews: productDetail.reviews || [],
+    };
   }
 
   private async saveProductsInCompetitorTable(

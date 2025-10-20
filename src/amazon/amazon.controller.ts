@@ -26,10 +26,20 @@ export class AmazonController {
   ) {}
 
   @UseInterceptors(CacheInterceptor)
-  @Get('products/:asin')
+  @Get('products/:asin/detail')
   async getProductDetail(@Param('asin') asin: string) {
 
     return this.amazonService.getProductDetail(asin);
+  }
+
+  @UseInterceptors(CacheInterceptor)
+  @Get('products/:productId/reviews')
+  async getProductReviews(@Param('productId') productId: string) {
+    if (!productId) {
+      throw new BadRequestException('Missing productId parameter');
+    }
+
+    return this.amazonService.getProductReviews(productId);
   }
 
   @UseInterceptors(CacheInterceptor)
