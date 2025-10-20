@@ -625,22 +625,45 @@ export class CreditsService {
 
   /**
    * Refunds credits for a specific test by deleting the credit usage record
+   * NOTE: The database trigger will automatically add credits back to company_credits.total
+   * when the credit_usage record is deleted
    * @param companyId - The unique identifier of the company
    * @param testId - The unique identifier of the test
    * @returns Promise<void> - Resolves when the refund is complete
-   * @throws Error - When database deletion fails
+   * @throws Error - When database operations fail
    */
   public async refundCreditUsage(
     companyId: string,
     testId: string,
   ): Promise<void> {
     try {
+      // Get the credit usage records to know how much will be refunded
+      const creditUsageRecords = await this.supabaseService.findMany<CreditUsage>(
+        TableName.CREDIT_USAGE,
+        { company_id: companyId, test_id: testId },
+        'credits_used'
+      );
+
+      if (!creditUsageRecords || creditUsageRecords.length === 0) {
+        this.logger.warn(`No credit usage found for test ${testId} and company ${companyId}, nothing to refund`);
+        return;
+      }
+
+      // Calculate total credits that will be refunded
+      const creditsToRefund = creditUsageRecords.reduce((sum, record) => sum + record.credits_used, 0);
+      const currentCredits = await this.getCompanyAvailableCredits(companyId);
+
+      // Delete the credit usage records
+      // NOTE: The database trigger will automatically add credits back to company_credits.total
       await this.supabaseService.delete(TableName.CREDIT_USAGE, {
         company_id: companyId,
         test_id: testId,
       });
 
-      this.logger.log(`Refunded credits for test ${testId} and company ${companyId}`);
+      // Get the actual balance after the trigger has run
+      const newBalance = await this.getCompanyAvailableCredits(companyId);
+
+      this.logger.log(`Refunded ${creditsToRefund} credits for test ${testId} and company ${companyId}. Balance changed from ${currentCredits} to ${newBalance}`);
     } catch (error) {
       this.logger.error(`Error refunding credits for test ${testId}:`, error);
       throw error;
@@ -663,6 +686,25 @@ export class CreditsService {
     testId?: string,
   ): Promise<{ success: boolean; message: string; remaining_credits: number }> {
     try {
+      // Check for duplicate deduction if testId is provided
+      if (testId) {
+        const existingUsage = await this.supabaseService.findMany<CreditUsage>(
+          TableName.CREDIT_USAGE,
+          { company_id: companyId, test_id: testId },
+          'id, credits_used'
+        );
+        
+        if (existingUsage && existingUsage.length > 0) {
+          this.logger.warn(`Credits already deducted for test ${testId}, skipping duplicate deduction`);
+          const currentCredits = await this.getCompanyAvailableCredits(companyId);
+          return {
+            success: true,
+            message: 'Credits were already deducted for this test',
+            remaining_credits: currentCredits,
+          };
+        }
+      }
+      
       // Get current available credits
       const currentCredits = await this.getCompanyAvailableCredits(companyId);
       
@@ -673,35 +715,12 @@ export class CreditsService {
         );
       }
 
-      // Calculate remaining credits
+      // Calculate remaining credits after deduction
       const remainingCredits = currentCredits - credits;
 
-      // Update company credits balance
-      const existingCredits = await this.supabaseService.findMany<CompanyCredits>(
-        TableName.COMPANY_CREDITS,
-        { company_id: companyId },
-        'id, total'
-      );
-
-      if (existingCredits && existingCredits.length > 0) {
-        // Update existing record
-        await this.supabaseService.update<CompanyCredits>(
-          TableName.COMPANY_CREDITS,
-          { total: remainingCredits },
-          [{ key: 'company_id', value: companyId }],
-        );
-      } else {
-        // Create new record
-        await this.supabaseService.insert<CompanyCredits>(
-          TableName.COMPANY_CREDITS,
-          {
-            company_id: companyId,
-            total: remainingCredits,
-          }
-        );
-      }
-
       // Create a credit usage record to track the deduction
+      // NOTE: The database trigger will automatically deduct from company_credits.total
+      // when this record is inserted, so we DON'T manually update company_credits
       const creditUsage = await this.supabaseService.insert<CreditUsage>(
         TableName.CREDIT_USAGE,
         {
@@ -716,10 +735,15 @@ export class CreditsService {
         throw new InternalServerErrorException('Failed to record credit deduction');
       }
 
+      // Get the actual balance after the trigger has run
+      const actualBalance = await this.getCompanyAvailableCredits(companyId);
+
+      this.logger.log(`Deducted ${credits} credits for company ${companyId}${testId ? ` (test: ${testId})` : ''}. New balance: ${actualBalance}`);
+
       return {
         success: true,
         message: 'Credits deducted successfully',
-        remaining_credits: remainingCredits,
+        remaining_credits: actualBalance,
       };
 
     } catch (error) {

@@ -465,6 +465,13 @@ export class TestsService {
   public async publishTest(testId: string) {
     try {
       const test = await this.getTestById(testId);
+      
+      // Check if test is already active to prevent duplicate publishing
+      if (test.status === 'active') {
+        this.logger.warn(`Test ${testId} is already active, skipping publish to prevent duplicate credit deduction`);
+        throw new BadRequestException('Test is already published and active');
+      }
+      
       const testDemographics = await this.getTestDemographics(testId);
 
       // Get participant count and screening from test_demographics table
@@ -492,6 +499,15 @@ export class TestsService {
         testVariations.map(({ prolific_test_id }) => prolific_test_id),
       );
       
+      // Deduct credits BEFORE publishing to prevent duplicate deduction on retry
+      this.logger.log(`Deducting ${requiredCredits} credits for test ${testId} before publishing`);
+      await this.creditsService.deductCredits(
+        test.company_id,
+        requiredCredits,
+        `Test publication: ${testId}`,
+        testId,
+      );
+      
       // Publish each variation
       // TODO: Split this into its own separated function
       for (const variation of testVariations) {
@@ -510,17 +526,14 @@ export class TestsService {
           error instanceof Error
           ? error.message
           : `Failed to publish study for variation ${variation.variation_type}`;
+          
+          // Refund credits if publishing fails
+          this.logger.error(`Publishing failed, refunding ${requiredCredits} credits`);
+          await this.creditsService.refundCreditUsage(test.company_id, testId);
+          
           throw new BadRequestException(errorMessage);
         }
       }
-      
-      // Deduct credits from company balance
-      await this.creditsService.deductCredits(
-        test.company_id,
-        requiredCredits,
-        `Test publication: ${testId}`,
-        testId,
-      );
 
       // Update test status to "active" after successful publish
       await this.updateTestStatus(testId, 'active');

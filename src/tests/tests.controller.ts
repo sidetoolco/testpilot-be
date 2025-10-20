@@ -3,6 +3,7 @@ import {
   Controller,
   forwardRef,
   Get,
+  HttpCode,
   HttpStatus,
   Inject,
   Param,
@@ -76,10 +77,11 @@ export class TestsController {
   }
 
   @Post('/:testId/publish')
+  @HttpCode(HttpStatus.OK)
   async publishTest(@Param('testId') testId: string) {
     await this.testsService.publishTest(testId);
 
-    return HttpStatus.OK;
+    return { success: true, message: 'Test published successfully' };
   }
 
   @Post('/block')
