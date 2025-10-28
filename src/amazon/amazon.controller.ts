@@ -33,6 +33,13 @@ export class AmazonController {
   }
 
   @UseInterceptors(CacheInterceptor)
+  @Get('products/:asin')
+  async getProductDetailLegacy(@Param('asin') asin: string) {
+
+    return this.amazonService.getProductDetail(asin);
+  }
+
+  @UseInterceptors(CacheInterceptor)
   @Get('products/:productId/reviews')
   async getProductReviews(@Param('productId') productId: string) {
     if (!productId) {
