@@ -13,7 +13,7 @@ import {
 export class WalmartProduct {
   @IsOptional()
   @IsString()
-  id?: string; // Use Walmart ID as id for this table
+  id?: string; // Database UUID (server-generated). Client-supplied `id` is ignored.
 
   @IsOptional()
   @IsString()
