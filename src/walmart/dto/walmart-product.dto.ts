@@ -13,12 +13,13 @@ import {
 export class WalmartProduct {
   @IsOptional()
   @IsString()
-  id?: string; // Database UUID (optional for new products)
+  id?: string; // Use Walmart ID as id for this table
 
   @IsOptional()
   @IsString()
   walmart_id?: string; // Walmart product ID (like "105XZBDBG2G0")
 
+  @Type(() => Number)
   @IsNumber()
   price: number;
 
@@ -28,17 +29,26 @@ export class WalmartProduct {
   @IsString()
   product_url: string;
 
+  @IsOptional()
+  @Type(() => Number)
   @IsNumber()
-  rating: number;
+  rating?: number | null;
 
+  @IsOptional()
+  @Type(() => Number)
   @IsNumber()
-  reviews_count: number;
+  reviews_count?: number | null;
 
+  @IsOptional()
   @IsString()
-  search_term: string;
+  search_term?: string | null;
 
   @IsString()
   title: string;
+
+  @IsOptional()
+  @IsString()
+  brand?: string | null;
 }
 
 export class SaveWalmartProductsDto {

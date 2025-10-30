@@ -154,6 +154,23 @@ export class WalmartController {
         userId,
         productsCount: products?.length,
       });
+
+      // Log first 2 items with type details for debugging payload shape
+      const sample = (products || []).slice(0, 2);
+      for (let i = 0; i < sample.length; i++) {
+        const p: any = sample[i] || {};
+        this.logger.debug(`payload[${i}]`, {
+          id: p?.id,
+          walmart_id: p?.walmart_id,
+          title: p?.title,
+          typeof_rating: typeof p?.rating,
+          typeof_reviews_count: typeof p?.reviews_count,
+          typeof_search_term: typeof p?.search_term,
+        });
+        this.logger.debug(`id===walmart_id[${i}]`, {
+          eq: p?.id && p?.walmart_id ? p.id === p.walmart_id : null,
+        });
+      }
       
       const userCompanyId = await this.usersService.getUserCompanyId(userId);
 
@@ -161,17 +178,50 @@ export class WalmartController {
         throw new BadRequestException('Missing company ID');
       }
 
+      // Defensive hydration, ID handling, and filtering
+      const skipped: Array<{ index: number; reason: string; walmart_id?: string | null; title?: string }> = [];
+      const normalized = (products || []).map((p, index) => {
+        const walmart_id = (p as any).walmart_id ?? (p as any).id;
+        let rating = (p as any).rating;
+        let reviews_count = (p as any).reviews_count;
+        const search_term_raw = (p as any).search_term;
+
+        rating = rating == null ? null : Number(rating);
+        reviews_count = reviews_count == null ? null : Number(reviews_count);
+        const search_term = typeof search_term_raw === 'string' ? search_term_raw : '';
+
+        return {
+          ...p,
+          // Do NOT pass client-provided id to DB; DB id is UUID
+          id: undefined,
+          walmart_id: walmart_id ?? null,
+          rating,
+          reviews_count,
+          search_term,
+        } as any;
+      });
+
+      const validProducts = normalized.filter((p, index) => {
+        if (!p?.walmart_id || `${p.walmart_id}`.trim() === '') {
+          skipped.push({ index, reason: 'missing walmart_id', walmart_id: p?.walmart_id ?? null, title: (p as any)?.title });
+          return false;
+        }
+        return true;
+      });
+
       if (testId) {
         this.logger.debug(`Saving Walmart products with testId: ${testId}, companyId: ${userCompanyId}`);
-        return await this.walmartService.saveWalmartProducts(
-          products,
+        const result = await this.walmartService.saveWalmartProducts(
+          validProducts as any,
           testId,
           userCompanyId,
         );
+        return { ...result, skipped };
       }
 
       this.logger.debug(`Saving Walmart products preview for companyId: ${userCompanyId}`);
-      return await this.walmartService.saveWalmartProductPreview(products, userCompanyId);
+      const preview = await this.walmartService.saveWalmartProductPreview(validProducts as any, userCompanyId);
+      return { products: preview, skipped };
     } catch (error) {
       this.logger.error('Walmart products save error', {
         errorType: error.constructor.name,

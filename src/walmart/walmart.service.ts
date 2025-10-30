@@ -119,9 +119,9 @@ export class WalmartService {
       // Batch upsert new products if any
       if (newProductsToInsert.length > 0) {
         // Filter out products with null walmart_id to avoid constraint violations
-        const validProductsToInsert = newProductsToInsert.filter(product => 
-          product.walmart_id && product.walmart_id.trim() !== ''
-        );
+        const validProductsToInsert = newProductsToInsert
+          .filter(product => product.walmart_id && product.walmart_id.trim() !== '')
+          .map(({ id, ...rest }) => ({ ...rest })); // strip client-provided id to avoid UUID errors
         
         if (validProductsToInsert.length > 0) {
           const newProducts = await this.supabaseService.upsertMany<WalmartProduct>(
@@ -239,9 +239,9 @@ export class WalmartService {
     // Batch upsert new products if any
     if (newProductsToInsert.length > 0) {
       // Filter out products with null walmart_id to avoid constraint violations
-      const validProductsToInsert = newProductsToInsert.filter(product => 
-        product.walmart_id && product.walmart_id.trim() !== ''
-      );
+      const validProductsToInsert = newProductsToInsert
+        .filter(product => product.walmart_id && product.walmart_id.trim() !== '')
+        .map(({ id, ...rest }) => ({ ...rest })); // strip client-provided id
       
       if (validProductsToInsert.length > 0) {
         const newProducts = await this.supabaseService.upsertMany<WalmartProduct>(
