@@ -96,80 +96,34 @@ export class ProlificService {
   ): Promise<ProlificStudy> {
     try {
       const filters = this.createProlificFilters(createTestDto.demographics);
-
-      const studyData = {
-        project: this.configService.get('PROLIFIC_PROJECT_ID'),
-        name: createTestDto.publicTitle,
-        internal_name: createTestDto.publicInternalName,
-        description:
-          'Welcome to your personalized shopping experience! This process is divided into two simple steps to understand your product preferences.\n\nStep 1: Choose from 12 products\nBrowse through our selection of products and choose the one you like the most. We want to know which ones you prefer.\n\nStep 2: Complete a short survey\nHelp us get to know you better by completing a brief survey.',
-        // access_details: [
-        //   {
-        //     external_url: createTestDto.customScreeningEnabled
-        //       ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}`
-        //       : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}`,
-        //     total_allocation: createTestDto.targetNumberOfParticipants,
-        //   },
-        // ],
-        external_study_url: createTestDto.customScreeningEnabled
-          ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`
-          : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
-        prolific_id_option: 'url_parameters',
-        completion_codes: [
-          {
-            code: createTestDto.publicInternalName,
-            code_type: 'COMPLETED',
-            actions: [
-              {
-                action: 'AUTOMATICALLY_APPROVE',
-              },
-            ],
-          },
-          // TODO: Consider making this configurable or removing if not needed
-          {
-            code: 'DEF234',
-            code_type: 'FOLLOW_UP_STUDY',
-            actions: [
-              {
-                action: 'AUTOMATICALLY_APPROVE',
-              },
-            ],
-          },
-          {
-            code: 'SPEEDER',
-            code_type: 'OTHER',
-            actions: [
-              {
-                action: 'REQUEST_RETURN',
-                return_reason:
-                  'Study completed too quickly (less than 2 minutes).',
-              },
-            ],
-          },
-          ...(createTestDto.customScreeningEnabled
-            ? [
-                {
-                  code: 'SCREENED-OUT',
-                  code_type: 'SCREENED_OUT',
-                  actions: [
-                    {
-                      action: 'MANUALLY_REVIEW',
-                    },
-                  ],
-                },
-              ]
-            : []),
-        ],
-        total_available_places: createTestDto.targetNumberOfParticipants,
-        estimated_completion_time: createTestDto.participantTimeRequiredMinutes,
-        reward: createTestDto.incentiveAmount,
-        device_compatibility: ['desktop'],
-        peripheral_requirements: [],
+      let study: ProlificStudy;
+      const useScreenedOutPath = createTestDto.customScreeningEnabled;
+      const studyData = this.buildStudyPayload(
+        createTestDto,
         filters,
-        is_custom_screening: createTestDto.customScreeningEnabled,
-      };
+        useScreenedOutPath,
+      );
 
-      const study = await this.httpClient.post<ProlificStudy>('/studies', studyData);
+      try {
+        study = await this.httpClient.post<ProlificStudy>('/studies', studyData);
+      } catch (error) {
+        if (!useScreenedOutPath || !this.isCustomScreeningCompatibilityError(error)) {
+          throw error;
+        }
+
+        this.logger.warn(
+          'Prolific rejected screened-out completion path. Retrying study creation without screened-out path.',
+        );
+        const fallbackStudyData = this.buildStudyPayload(
+          createTestDto,
+          filters,
+          false,
+        );
+        study = await this.httpClient.post<ProlificStudy>(
+          '/studies',
+          fallbackStudyData,
+        );
+      }
       
       // Calculate and store the cost immediately for future balance checks
       try {
@@ -199,6 +153,85 @@ export class ProlificService {
       this.logger.error('Failed to create Prolific study:', error);
       throw error;
     }
+  }
+
+  private buildStudyPayload(
+    createTestDto: CreateTestDto,
+    filters: any[],
+    includeScreenedOutPath: boolean,
+  ) {
+    const completionCodes: any[] = [
+      {
+        code: createTestDto.publicInternalName,
+        code_type: 'COMPLETED',
+        actions: [
+          {
+            action: 'AUTOMATICALLY_APPROVE',
+          },
+        ],
+      },
+      // TODO: Consider making this configurable or removing if not needed
+      {
+        code: 'DEF234',
+        code_type: 'FOLLOW_UP_STUDY',
+        actions: [
+          {
+            action: 'AUTOMATICALLY_APPROVE',
+          },
+        ],
+      },
+      {
+        code: 'SPEEDER',
+        code_type: 'OTHER',
+        actions: [
+          {
+            action: 'REQUEST_RETURN',
+            return_reason:
+              'Study completed too quickly (less than 2 minutes).',
+          },
+        ],
+      },
+    ];
+
+    if (includeScreenedOutPath) {
+      completionCodes.push({
+        code: 'SCREENED-OUT',
+        code_type: 'SCREENED_OUT',
+        actions: [
+          {
+            action: 'MANUALLY_REVIEW',
+          },
+        ],
+      });
+    }
+
+    return {
+      project: this.configService.get('PROLIFIC_PROJECT_ID'),
+      name: createTestDto.publicTitle,
+      internal_name: createTestDto.publicInternalName,
+      description:
+        'Welcome to your personalized shopping experience! This process is divided into two simple steps to understand your product preferences.\n\nStep 1: Choose from 12 products\nBrowse through our selection of products and choose the one you like the most. We want to know which ones you prefer.\n\nStep 2: Complete a short survey\nHelp us get to know you better by completing a brief survey.',
+      external_study_url: createTestDto.customScreeningEnabled
+        ? `https://app.testpilotcpg.com/questions/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`
+        : `https://app.testpilotcpg.com/test/${createTestDto.publicInternalName}?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
+      prolific_id_option: 'url_parameters',
+      completion_codes: completionCodes,
+      total_available_places: createTestDto.targetNumberOfParticipants,
+      estimated_completion_time: createTestDto.participantTimeRequiredMinutes,
+      reward: createTestDto.incentiveAmount,
+      device_compatibility: ['desktop'],
+      peripheral_requirements: [],
+      filters,
+    };
+  }
+
+  private isCustomScreeningCompatibilityError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    const msg = error.message || '';
+    return (
+      msg.includes('"error_code":140003') ||
+      msg.toLowerCase().includes('no longer support this version of custom screening')
+    );
   }
 
   public async screenOutSubmission(
