@@ -270,14 +270,24 @@ export class WalmartService {
   private queryProductsFromApi(searchTerm: string) {
     return this.scraperHttpClient.get<WalmartResponse>(
       `/structured/walmart/search?query=${encodeURIComponent(searchTerm)}&page=1`,
-      { params: { ultra_premium: 'true' } }
+      {
+        params: {
+          country_code: 'us',
+          premium: 'true',
+        },
+      }
     );
   }
 
   private queryProductDetailFromApi(productId: string) {
     return this.scraperHttpClient.get<WalmartProductDetail>(
       `/structured/walmart/product?product_id=${productId}`,
-      { params: { ultra_premium: 'true' } }
+      {
+        params: {
+          country_code: 'us',
+          premium: 'true',
+        },
+      }
     );
   }
 
