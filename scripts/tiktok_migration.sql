@@ -107,6 +107,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.amazon_products WHERE id = NEW.product_id) THEN
       RAISE EXCEPTION 'Product ID % does not exist in amazon_products', NEW.product_id;
     END IF;
+  ELSE
+    RAISE EXCEPTION 'Invalid product_type: %. Must be amazon_product, walmart_product, or tiktok_product.', COALESCE(NEW.product_type, 'NULL');
   END IF;
   RETURN NEW;
 END;
