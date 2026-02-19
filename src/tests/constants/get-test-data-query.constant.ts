@@ -64,6 +64,21 @@ export const GET_TEST_DATA_QUERY = `
               prolific_pid,
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
+          ),
+          responses_comparisons_tiktok(
+            improve_suggestions,
+            likes_most,
+            choose_reason,
+            appetizing,
+            target_audience,
+            novelty,
+            products(id, title, image_url, price),
+            tester_id(
+              variation_type,
+              id,
+              prolific_pid,
+              shopper_demographic(id_prolific, age, sex, country_residence)
+            )
           )
         `;
 

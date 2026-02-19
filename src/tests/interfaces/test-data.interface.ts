@@ -10,7 +10,7 @@ export interface RawTestData {
   updated_at: string;
   block: boolean;
   competitors: Array<{
-    product_type: 'amazon_product' | 'walmart_product';
+    product_type: 'amazon_product' | 'walmart_product' | 'tiktok_product';
     product_id?: string;
     amazon_product?: {
       id: string;
@@ -19,6 +19,12 @@ export interface RawTestData {
       price: number;
     };
     walmart_product?: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    tiktok_product?: {
       id: string;
       title: string;
       image_url: string;
@@ -106,6 +112,31 @@ export interface RawTestData {
       price: number;
     };
     walmart_products: {
+      id: string;
+      title: string;
+      image_url: string;
+      price: number;
+    };
+    tester_id: {
+      variation_type: string;
+      id: string;
+      prolific_pid: string;
+      shopper_demographic: {
+        id_prolific: string;
+        age: number;
+        sex: string;
+        country_residence: string;
+      };
+    };
+  }>;
+  responses_comparisons_tiktok: Array<{
+    improve_suggestions: string;
+    likes_most: string;
+    choose_reason: string;
+    appetizing?: number | null;
+    target_audience?: number | null;
+    novelty?: number | null;
+    products: {
       id: string;
       title: string;
       image_url: string;
