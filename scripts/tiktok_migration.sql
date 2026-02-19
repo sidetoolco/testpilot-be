@@ -62,13 +62,18 @@ CREATE TABLE IF NOT EXISTS public.competitive_insights_tiktok (
     count numeric DEFAULT '0'::numeric
 );
 COMMENT ON TABLE public.competitive_insights_tiktok IS 'Competitive insights for TikTok Shop tests';
+CREATE UNIQUE INDEX IF NOT EXISTS competitive_insights_tiktok_unique_idx
+  ON public.competitive_insights_tiktok (competitor_product_id, test_id, variant_type);
 
 -- 4. Foreign keys for responses_comparisons_tiktok (PostgREST requires FKs for joins)
 ALTER TABLE public.responses_comparisons_tiktok
   ADD CONSTRAINT responses_comparisons_tiktok_tester_id_fkey
   FOREIGN KEY (tester_id) REFERENCES public.testers_session(id) ON DELETE SET NULL;
 
--- product_id here is the main test product (not a tiktok_product), so no FK added.
+-- product_id is the main test product (variant), so FK to products for PostgREST join
+ALTER TABLE public.responses_comparisons_tiktok
+  ADD CONSTRAINT responses_comparisons_tiktok_product_id_fkey
+  FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
 
 ALTER TABLE public.competitive_insights_tiktok
   ADD CONSTRAINT competitive_insights_tiktok_competitor_product_id_fkey

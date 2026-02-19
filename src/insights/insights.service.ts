@@ -50,10 +50,15 @@ export class InsightsService {
     private readonly adalineService: AdalineService,
   ) {}
 
-  public async generateSummaryForTest(testId: string) {
+  public async generateSummaryForTest(testId: string, markComplete = false) {
     this.logger.log(`🔍 ===== GENERATING SUMMARY FOR TEST ${testId} WITH COMPLETION CHECK =====`);
     
     try {
+      if (markComplete) {
+        this.logger.log(`📋 Marking all variations complete (manual completion)...`);
+        await this.testsService.markAllVariationsComplete(testId);
+      }
+
       // Step 1: Get current test status
       this.logger.log(`📋 Step 1: Getting current test status...`);
       const currentTest = await this.testsService.getTestById(testId);
@@ -631,9 +636,16 @@ export class InsightsService {
         results.map(async (result, index) => {
           try {
             this.logger.log(`Saving result ${index + 1}/${results.length}:`, result);
+            const payload =
+              tableName === TableName.COMPETITIVE_INSIGHTS_TIKTOK
+                ? (() => {
+                    const { id: _id, ...rest } = result as any;
+                    return rest;
+                  })()
+                : result;
             const saved = await this.supabaseService.upsert(
               tableName,
-              result,
+              payload,
               'competitor_product_id,test_id,variant_type',
             );
             this.logger.log(`Successfully saved result ${index + 1}`);

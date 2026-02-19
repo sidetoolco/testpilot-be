@@ -299,6 +299,20 @@ export class TestsService {
   }
 
   /**
+   * Marks all variations for a test as complete (prolific_status = 'complete').
+   * Used when the user manually completes a test (e.g. TikTok / non-Prolific flow)
+   * so that finalizeIfComplete and AI insights can run.
+   */
+  public async markAllVariationsComplete(testId: string): Promise<void> {
+    const variations = await this.getTestVariations(testId);
+    if (!variations?.length) return;
+    for (const v of variations) {
+      await this.updateTestVariationStatus('complete', testId, v.variation_type);
+    }
+    this.logger.log(`Marked ${variations.length} variations complete for test ${testId}`);
+  }
+
+  /**
    * Centralized method to finalize test completion if all variations are complete.
    * This method handles the complete flow: check variations and update status.
    * AI insights generation is handled by the calling service to avoid circular dependencies.
