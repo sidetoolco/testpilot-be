@@ -70,6 +70,10 @@ ALTER TABLE public.responses_comparisons_tiktok
 
 -- product_id here is the main test product (not a tiktok_product), so no FK added.
 
+ALTER TABLE public.competitive_insights_tiktok
+  ADD CONSTRAINT competitive_insights_tiktok_competitor_product_id_fkey
+  FOREIGN KEY (competitor_product_id) REFERENCES public.tiktok_products(id) ON DELETE SET NULL;
+
 ALTER TABLE public.responses_comparisons_tiktok
   ADD CONSTRAINT responses_comparisons_tiktok_test_id_fkey
   FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
