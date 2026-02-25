@@ -97,8 +97,16 @@ export class TestsService {
     );
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+    const isTiktokTest = competitors.some((c: any) => c.product_type === 'tiktok_product');
 
-    if (isWalmartTest) {
+    if (isTiktokTest) {
+      const tiktokInsights = await this.supabaseService.findMany(
+        TableName.COMPETITIVE_INSIGHTS_TIKTOK,
+        { test_id: testId },
+        '*'
+      );
+      return this.transformCompetitiveInsightsData(tiktokInsights, 'tiktok');
+    } else if (isWalmartTest) {
       // For Walmart tests, fetch from competitive_insights_walmart
       const walmartInsights = await this.supabaseService.findMany(
         TableName.COMPETITIVE_INSIGHTS_WALMART,
@@ -118,7 +126,7 @@ export class TestsService {
     }
   }
 
-  private async transformCompetitiveInsightsData(insights: any[], productType: 'amazon' | 'walmart'): Promise<CompetitiveInsights> {
+  private async transformCompetitiveInsightsData(insights: any[], productType: 'amazon' | 'walmart' | 'tiktok'): Promise<CompetitiveInsights> {
     const result: CompetitiveInsights = {};
 
     // Group insights by competitor_product_id
@@ -133,8 +141,12 @@ export class TestsService {
 
     // Transform each group
     for (const [productId, productInsights] of Object.entries(groupedInsights)) {
-      // Get product details
-      const productTable = productType === 'walmart' ? TableName.WALMART_PRODUCTS : TableName.AMAZON_PRODUCTS;
+      const productTable =
+        productType === 'walmart'
+          ? TableName.WALMART_PRODUCTS
+          : productType === 'tiktok'
+            ? TableName.TIKTOK_PRODUCTS
+            : TableName.AMAZON_PRODUCTS;
       const product = await this.supabaseService.getById({
         tableName: productTable,
         id: productId,
@@ -226,10 +238,14 @@ export class TestsService {
    * Determine session type based on test name and session data
    */
   private getSessionType(session: any, testName: string): string {
-    if (testName === 'walmart' || testName?.includes('walmart')) {
+    if (testName === 'tiktok' || testName?.includes('tiktok')) {
+      return 'TikTok Session';
+    } else if (testName === 'walmart' || testName?.includes('walmart')) {
       return 'Walmart Session';
     } else if (testName === 'amazon' || testName?.includes('amazon')) {
       return 'Amazon Session';
+    } else if (session.tiktok_product_id) {
+      return 'TikTok Session';
     } else if (session.walmart_product_id) {
       return 'Walmart Session';
     } else if (session.competitor_id) {
@@ -280,6 +296,20 @@ export class TestsService {
       this.logger.error(`Failed to check variation completion for test ${testId}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Marks all variations for a test as complete (prolific_status = 'complete').
+   * Used when the user manually completes a test (e.g. TikTok / non-Prolific flow)
+   * so that finalizeIfComplete and AI insights can run.
+   */
+  public async markAllVariationsComplete(testId: string): Promise<void> {
+    const variations = await this.getTestVariations(testId);
+    if (!variations?.length) return;
+    for (const v of variations) {
+      await this.updateTestVariationStatus('complete', testId, v.variation_type);
+    }
+    this.logger.log(`Marked ${variations.length} variations complete for test ${testId}`);
   }
 
   /**
@@ -427,6 +457,7 @@ export class TestsService {
         // Related Data Tables (delete first)
         this.supabaseService.delete(TableName.RESPONSES_SURVEYS, { test_id: testId }).catch(error => {}),
         this.supabaseService.delete(TableName.RESPONSES_COMPARISONS, { test_id: testId }).catch(error => {}),
+        this.supabaseService.delete(TableName.RESPONSES_COMPARISONS_TIKTOK, { test_id: testId }).catch(error => {}),
         this.supabaseService.delete(TableName.TESTERS_SESSION, { test_id: testId }).catch(error => {}),
         this.supabaseService.delete(TableName.INSIGHT_STATUS, { test_id: testId }).catch(error => {}),
         this.supabaseService.delete(TableName.AI_INSIGHTS, { test_id: testId }).catch(error => {}),
@@ -580,6 +611,19 @@ export class TestsService {
           } catch (error) {
             this.logger.warn(`Failed to fetch Walmart product ${competitor.product_id}:`, error);
           }
+        } else if (competitor.product_type === 'tiktok_product' && competitor.product_id) {
+          try {
+            const tiktokProduct = await this.supabaseService.getById({
+              tableName: TableName.TIKTOK_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price',
+            });
+            if (tiktokProduct) {
+              enriched.tiktok_product = tiktokProduct as any;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch TikTok product ${competitor.product_id}:`, error);
+          }
         }
 
         return enriched;
@@ -597,10 +641,13 @@ export class TestsService {
       data.responses_surveys || [],
     );
     
-    // Use Walmart responses if they exist, otherwise use Amazon responses
-    const comparisonResponses = (data.responses_comparisons_walmart?.length || 0) > 0 
-      ? data.responses_comparisons_walmart || []
-      : data.responses_comparisons || [];
+    // Use TikTok > Walmart > Amazon responses depending on which market was used
+    const comparisonResponses =
+      (data.responses_comparisons_tiktok?.length || 0) > 0
+        ? data.responses_comparisons_tiktok || []
+        : (data.responses_comparisons_walmart?.length || 0) > 0
+          ? data.responses_comparisons_walmart || []
+          : data.responses_comparisons || [];
     
     const comparisonsByType = this.groupResponsesByType(comparisonResponses);
 
@@ -612,14 +659,14 @@ export class TestsService {
       searchTerm: data.search_term,
       block: data.block,
       competitors: data.competitors?.map((c: any) => {
-        // Return the correct product based on product_type
-        if (c.product_type === 'walmart_product' && c.walmart_product) {
+        if (c.product_type === 'tiktok_product' && c.tiktok_product) {
+          return c.tiktok_product;
+        } else if (c.product_type === 'walmart_product' && c.walmart_product) {
           return c.walmart_product;
         } else if (c.product_type === 'amazon_product' && c.amazon_product) {
           return c.amazon_product;
         }
-        // Fallback to available product
-        return c.amazon_product || c.walmart_product;
+        return c.amazon_product || c.walmart_product || c.tiktok_product;
       }) || [],
       variations: {
         a: this.getVariationWithProduct(data.variations, 'a'),
@@ -636,7 +683,8 @@ export class TestsService {
       completed_sessions:
         (data.responses_surveys?.length || 0) +
         (data.responses_comparisons?.length || 0) +
-        (data.responses_comparisons_walmart?.length || 0),
+        (data.responses_comparisons_walmart?.length || 0) +
+        (data.responses_comparisons_tiktok?.length || 0),
       responses: {
         surveys: surveysByType,
         comparisons: comparisonsByType,
@@ -787,18 +835,18 @@ export class TestsService {
       const { session, timing_data, responses } = responseData;
 
       // 1. Create or update testers session
-      const sessionData = {
+      const sessionData: any = {
         test_id: session.test_id,
         prolific_pid: session.prolific_pid,
         variation_type: session.variation_type,
         product_id: session.product_id || null,
         competitor_id: session.competitor_id || null,
         walmart_product_id: session.walmart_product_id || null,
+        tiktok_product_id: (session as any).tiktok_product_id || null,
         status: session.status || 'completed',
         ended_at: session.ended_at || new Date().toISOString(),
       };
 
-      // Fix: Auto-detect Walmart tests and set walmart_product_id for proper session type
       try {
         const test = await this.supabaseService.getByCondition({
           tableName: TableName.TESTS,
@@ -810,14 +858,17 @@ export class TestsService {
 
         const testName = (test as any)?.name;
         const isWalmartTest = testName === 'walmart' || testName?.includes('walmart');
-        
-        if (isWalmartTest && !sessionData.walmart_product_id && sessionData.product_id) {
-          // For Walmart tests, use the test product as the walmart_product_id
+        const isTiktokTest = testName === 'tiktok' || testName?.includes('tiktok');
+
+        if (isTiktokTest && !sessionData.tiktok_product_id && sessionData.product_id) {
+          sessionData.tiktok_product_id = sessionData.product_id;
+          this.logger.log(`Auto-set tiktok_product_id for TikTok test: ${sessionData.tiktok_product_id}`);
+        } else if (isWalmartTest && !sessionData.walmart_product_id && sessionData.product_id) {
           sessionData.walmart_product_id = sessionData.product_id;
           this.logger.log(`Auto-set walmart_product_id for Walmart test: ${sessionData.walmart_product_id}`);
         }
-        
-        this.logger.log(`Session type detection - Test: ${testName}, IsWalmart: ${isWalmartTest}, WalmartProductId: ${sessionData.walmart_product_id}`);
+
+        this.logger.log(`Session type detection - Test: ${testName}, IsWalmart: ${isWalmartTest}, IsTikTok: ${isTiktokTest}`);
       } catch (error) {
         this.logger.warn('Could not determine test type for session fix:', error);
       }
@@ -861,6 +912,10 @@ export class TestsService {
           product_id: time.product_id || null,
           competitor_id: time.competitor_id || null,
           walmart_product_id: time.walmart_product_id || session.walmart_product_id || null,
+          tiktok_product_id:
+            time.tiktok_product_id ||
+            (session as any).tiktok_product_id ||
+            null,
           time_spent: time.time_spent,
           click: time.click || 0,
         }));
@@ -914,8 +969,20 @@ export class TestsService {
           });
 
           const testName = (test as any)?.name;
-          const isWalmartTest = testName === 'walmart' || session.walmart_product_id;
-          const tableName = isWalmartTest ? TableName.RESPONSES_COMPARISONS_WALMART : TableName.RESPONSES_COMPARISONS;
+          const isTiktokTest =
+            testName === 'tiktok' ||
+            testName?.includes('tiktok') ||
+            !!(session as any).tiktok_product_id;
+          const isWalmartTest =
+            !isTiktokTest &&
+            (testName === 'walmart' ||
+              testName?.includes('walmart') ||
+              !!session.walmart_product_id);
+          const tableName = isTiktokTest
+            ? TableName.RESPONSES_COMPARISONS_TIKTOK
+            : isWalmartTest
+              ? TableName.RESPONSES_COMPARISONS_WALMART
+              : TableName.RESPONSES_COMPARISONS;
           
           await this.supabaseService.insert(tableName, responseRecords);
           this.logger.log(`Inserted ${responseRecords.length} response records into ${tableName} for ${testName || 'unknown'} test`);

@@ -134,6 +134,7 @@ export class TestsController {
         timingCount: responseData.timing_data?.length || 0,
         responseCount: responseData.responses?.length || 0,
         hasWalmartProductId: !!responseData.session.walmart_product_id,
+        hasTikTokProductId: !!(responseData.session as any).tiktok_product_id,
         timingDataSample: responseData.timing_data?.[0],
       });
 

@@ -17,8 +17,14 @@ export class InsightsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('/:testId/generate-summary')
-  generateSummaryForTest(@Param('testId') testId: string) {
-    return this.insightsService.generateSummaryForTest(testId);
+  generateSummaryForTest(
+    @Param('testId') testId: string,
+    @Query('markComplete') markCompleteQuery?: string,
+    @Body('markComplete') markCompleteBody?: boolean,
+  ) {
+    const markComplete =
+      markCompleteQuery === 'true' || markCompleteQuery === '1' || markCompleteBody === true;
+    return this.insightsService.generateSummaryForTest(testId, markComplete);
   }
 
   @UseGuards(JwtAuthGuard)

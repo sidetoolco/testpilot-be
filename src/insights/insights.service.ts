@@ -50,10 +50,15 @@ export class InsightsService {
     private readonly adalineService: AdalineService,
   ) {}
 
-  public async generateSummaryForTest(testId: string) {
+  public async generateSummaryForTest(testId: string, markComplete = false) {
     this.logger.log(`🔍 ===== GENERATING SUMMARY FOR TEST ${testId} WITH COMPLETION CHECK =====`);
     
     try {
+      if (markComplete) {
+        this.logger.log(`📋 Marking all variations complete (manual completion)...`);
+        await this.testsService.markAllVariationsComplete(testId);
+      }
+
       // Step 1: Get current test status
       this.logger.log(`📋 Step 1: Getting current test status...`);
       const currentTest = await this.testsService.getTestById(testId);
@@ -273,22 +278,15 @@ export class InsightsService {
     );
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+    const isTiktokTest = competitors.some((c: any) => c.product_type === 'tiktok_product');
 
-    if (isWalmartTest) {
-      // For Walmart tests, use responses_comparisons_walmart
-      return await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS_WALMART,
-        { test_id: testId, product_id: productId },
-        '*'
-      );
-    } else {
-      // For Amazon tests, use responses_comparisons
-      return await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS,
-        { test_id: testId, product_id: productId },
-        '*'
-      );
-    }
+    const table = isTiktokTest
+      ? TableName.RESPONSES_COMPARISONS_TIKTOK
+      : isWalmartTest
+        ? TableName.RESPONSES_COMPARISONS_WALMART
+        : TableName.RESPONSES_COMPARISONS;
+
+    return this.supabaseService.findMany(table, { test_id: testId, product_id: productId }, '*');
   }
 
   private async getTotalSelectionsForVariant(testId: string, variantType: string): Promise<number> {
@@ -326,21 +324,18 @@ export class InsightsService {
     );
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+    const isTiktokTest = competitors.some((c: any) => c.product_type === 'tiktok_product');
+
+    const comparisonTable = isTiktokTest
+      ? TableName.RESPONSES_COMPARISONS_TIKTOK
+      : isWalmartTest
+        ? TableName.RESPONSES_COMPARISONS_WALMART
+        : TableName.RESPONSES_COMPARISONS;
 
     let variantComparisons = [];
-    if (isWalmartTest) {
+    {
       const allComparisons = await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS_WALMART,
-        { test_id: testId },
-        '*, tester_id'
-      );
-      variantComparisons = allComparisons.filter((comparison: any) => {
-        const variationType = sessionMap.get(comparison.tester_id);
-        return variationType === variantType;
-      });
-    } else {
-      const allComparisons = await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS,
+        comparisonTable,
         { test_id: testId },
         '*, tester_id'
       );
@@ -622,9 +617,13 @@ export class InsightsService {
 
       this.logger.log(`Generated ${results.length} competitive insight results`);
 
-      // Determine which table to use based on test type
       const isWalmartTest = testCompetitors.some((c: any) => c.product_type === 'walmart_product');
-      const tableName = isWalmartTest ? TableName.COMPETITIVE_INSIGHTS_WALMART : TableName.COMPETITIVE_INSIGHTS;
+      const isTiktokTest = testCompetitors.some((c: any) => c.product_type === 'tiktok_product');
+      const tableName = isTiktokTest
+        ? TableName.COMPETITIVE_INSIGHTS_TIKTOK
+        : isWalmartTest
+          ? TableName.COMPETITIVE_INSIGHTS_WALMART
+          : TableName.COMPETITIVE_INSIGHTS;
       
       this.logger.log(`Using table ${tableName} for competitive insights`);
       this.logger.log(`Test competitors: ${JSON.stringify(testCompetitors.map(c => ({ id: c.id, product_id: c.product_id, product_type: c.product_type })))}`);
@@ -637,9 +636,16 @@ export class InsightsService {
         results.map(async (result, index) => {
           try {
             this.logger.log(`Saving result ${index + 1}/${results.length}:`, result);
+            const payload =
+              tableName === TableName.COMPETITIVE_INSIGHTS_TIKTOK
+                ? (() => {
+                    const { id: _id, ...rest } = result as any;
+                    return rest;
+                  })()
+                : result;
             const saved = await this.supabaseService.upsert(
               tableName,
-              result,
+              payload,
               'competitor_product_id,test_id,variant_type',
             );
             this.logger.log(`Successfully saved result ${index + 1}`);
@@ -705,6 +711,19 @@ export class InsightsService {
           } catch (error) {
             this.logger.warn(`Failed to fetch Amazon product ${competitor.product_id}:`, error);
           }
+        } else if (competitor.product_type === 'tiktok_product' && competitor.product_id) {
+          try {
+            const tiktokProduct = await this.supabaseService.getById({
+              tableName: TableName.TIKTOK_PRODUCTS,
+              id: competitor.product_id,
+              selectQuery: 'id, title, image_url, price, rating, reviews_count',
+            });
+            if (tiktokProduct) {
+              enriched.product = tiktokProduct;
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch TikTok product ${competitor.product_id}:`, error);
+          }
         }
 
         return enriched;
@@ -723,17 +742,22 @@ export class InsightsService {
     );
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+    const isTiktokTest = competitors.some((c: any) => c.product_type === 'tiktok_product');
 
-    if (isWalmartTest) {
-      // For Walmart tests, get ALL comparison responses for the test
-      return await this.supabaseService.findMany(
+    if (isTiktokTest) {
+      return this.supabaseService.findMany(
+        TableName.RESPONSES_COMPARISONS_TIKTOK,
+        { test_id: testId },
+        '*'
+      );
+    } else if (isWalmartTest) {
+      return this.supabaseService.findMany(
         TableName.RESPONSES_COMPARISONS_WALMART,
         { test_id: testId },
         '*'
       );
     } else {
-      // For Amazon tests, get ALL comparison responses for the test
-      return await this.supabaseService.findMany(
+      return this.supabaseService.findMany(
         TableName.RESPONSES_COMPARISONS,
         { test_id: testId },
         '*'
@@ -750,36 +774,23 @@ export class InsightsService {
     );
 
     const isWalmartTest = competitors.some((c: any) => c.product_type === 'walmart_product');
+    const isTiktokTest = competitors.some((c: any) => c.product_type === 'tiktok_product');
 
-    if (isWalmartTest) {
-      // For Walmart tests, get comparison responses for the specific variant
-      const allResponses = await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS_WALMART,
-        { test_id: testId },
-        '*, tester_id!inner(variation_type)'
-      );
-      
-      // Filter by variant type
-      const filteredResponses = allResponses.filter((response: any) => 
-        response.tester_id?.variation_type === variantType
-      );
-      
-      return filteredResponses;
-    } else {
-      // For Amazon tests, get comparison responses for the specific variant
-      const allResponses = await this.supabaseService.findMany(
-        TableName.RESPONSES_COMPARISONS,
-        { test_id: testId },
-        '*, tester_id!inner(variation_type)'
-      );
-      
-      // Filter by variant type
-      const filteredResponses = allResponses.filter((response: any) => 
-        response.tester_id?.variation_type === variantType
-      );
-      
-      return filteredResponses;
-    }
+    const responseTable = isTiktokTest
+      ? TableName.RESPONSES_COMPARISONS_TIKTOK
+      : isWalmartTest
+        ? TableName.RESPONSES_COMPARISONS_WALMART
+        : TableName.RESPONSES_COMPARISONS;
+
+    const allResponses = await this.supabaseService.findMany(
+      responseTable,
+      { test_id: testId },
+      '*, tester_id!inner(variation_type)'
+    );
+
+    return allResponses.filter(
+      (response: any) => response.tester_id?.variation_type === variantType
+    );
   }
 
   private groupCompetitorMetrics(comparisons: any[]): Record<string, any> {
@@ -1523,23 +1534,23 @@ export class InsightsService {
         testId,
       );
 
-      // Get comparison responses - try Walmart first, then Amazon
+      // Get comparison responses – try TikTok, then Walmart, then Amazon
       let comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
-        TableName.RESPONSES_COMPARISONS_WALMART,
-        {
-          test_id: testId,
-          product_id: variation.product_id,
-        },
+        TableName.RESPONSES_COMPARISONS_TIKTOK,
+        { test_id: testId, product_id: variation.product_id },
       );
 
-      // If no Walmart responses, try Amazon
+      if (comparisonResponses.length === 0) {
+        comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
+          TableName.RESPONSES_COMPARISONS_WALMART,
+          { test_id: testId, product_id: variation.product_id },
+        );
+      }
+
       if (comparisonResponses.length === 0) {
         comparisonResponses = await this.supabaseService.findMany<ResponseComparison>(
           TableName.RESPONSES_COMPARISONS,
-          {
-            test_id: testId,
-            product_id: variation.product_id,
-          },
+          { test_id: testId, product_id: variation.product_id },
         );
       }
 

@@ -64,6 +64,21 @@ export const GET_TEST_DATA_QUERY = `
               prolific_pid,
               shopper_demographic(id_prolific, age, sex, country_residence)
             )
+          ),
+          responses_comparisons_tiktok(
+            improve_suggestions,
+            likes_most,
+            choose_reason,
+            appetizing,
+            target_audience,
+            novelty,
+            products(id, title, image_url, price),
+            tester_id(
+              variation_type,
+              id,
+              prolific_pid,
+              shopper_demographic(id_prolific, age, sex, country_residence)
+            )
           )
         `;
 
@@ -80,13 +95,16 @@ export const GET_TEST_SESSIONS_QUERY = `
   ts.ended_at,
   ts.competitor_id,
   ts.walmart_product_id,
+  ts.tiktok_product_id,
   ts.product_id,
   t.name as test_name,
   CASE 
-    WHEN t.name = 'walmart' OR t.name LIKE '%walmart%' THEN 'Walmart Session'
-    WHEN t.name = 'amazon' OR t.name LIKE '%amazon%' THEN 'Amazon Session'
+    WHEN ts.tiktok_product_id IS NOT NULL THEN 'TikTok Session'
     WHEN ts.walmart_product_id IS NOT NULL THEN 'Walmart Session'
     WHEN ts.competitor_id IS NOT NULL THEN 'Amazon Session'
+    WHEN t.name = 'walmart' OR t.name LIKE '%walmart%' THEN 'Walmart Session'
+    WHEN t.name = 'amazon' OR t.name LIKE '%amazon%' THEN 'Amazon Session'
+    WHEN t.name = 'tiktok' OR t.name LIKE '%tiktok%' THEN 'TikTok Session'
     ELSE 'Unknown Session Type'
   END as session_type
 `;

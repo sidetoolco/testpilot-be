@@ -14,6 +14,10 @@ export class TestTimeDto {
   @IsOptional()
   walmart_product_id?: string;
 
+  @IsString()
+  @IsOptional()
+  tiktok_product_id?: string;
+
   @IsNumber()
   time_spent: number;
 
@@ -93,6 +97,10 @@ export class TestSessionDto {
   @IsString()
   @IsOptional()
   walmart_product_id?: string;
+
+  @IsString()
+  @IsOptional()
+  tiktok_product_id?: string;
 
   @IsString()
   @IsOptional()

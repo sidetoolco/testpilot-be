@@ -11,6 +11,7 @@ import { OpenAiModule } from './open-ai/open-ai.module';
 import { AdalineModule } from './adaline/adaline.module';
 import { AmazonModule } from './amazon/amazon.module';
 import { WalmartModule } from './walmart/walmart.module';
+import { TikTokModule } from './tiktok/tiktok.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { UsersModule } from './users/users.module';
 import { ScreeningModule } from './screening/screening.module';
@@ -81,6 +82,7 @@ import { JsonBodyMiddleware, RawBodyMiddleware } from 'lib/middlewares';
     AdalineModule,
     AmazonModule,
     WalmartModule,
+    TikTokModule,
     CacheModule.register({ isGlobal: true, ttl: 86400 }),
     UsersModule,
     ScreeningModule,
